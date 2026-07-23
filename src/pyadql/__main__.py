@@ -207,4 +207,4 @@ def run(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     # execute only if run as a script
-    SystemExit(run)
+    raise SystemExit(run)
