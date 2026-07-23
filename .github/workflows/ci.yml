@@ -177,29 +177,44 @@ jobs:
 # 🏷️ RELEASE (tags only)
 # -----------------------------
   release:
-    name: Release Build
+      name: Release Build
+      runs-on: ubuntu-latest
+      needs: build
+      if: startsWith(github.ref, 'refs/tags/')
+
+      steps:
+        - name: Download dist from build
+          uses: actions/download-artifact@v4
+          with:
+            name: dist
+            path: dist/
+
+        - name: Upload release artifacts
+          uses: actions/upload-artifact@v4
+          with:
+            name: release-dist
+            path: dist/
+
+
+# -----------------------------
+# 🚀 PUBLISH TO PYPI (tags only)
+# -----------------------------
+  publish-pypi:
+    name: Publish to PyPI
     runs-on: ubuntu-latest
-    needs: build
+    needs: release
     if: startsWith(github.ref, 'refs/tags/')
 
+    environment: pypi
+    permissions:
+      id-token: write   # requis pour le trusted publishing OIDC
+
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Build release
-        run: |
-          python -m pip install --upgrade pip
-          pip install uv
-          make prepare-dev
-          make install-dev
-          make release
-
-      - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
+      - name: Download dist
+        uses: actions/download-artifact@v4
         with:
           name: release-dist
           path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
