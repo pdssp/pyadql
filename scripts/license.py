@@ -1,3 +1,4 @@
+import re
 import subprocess
 
 import toml
@@ -13,8 +14,13 @@ dev_dependencies = pyproject["project"]["dependencies"]
 # Boucle pour extraire les noms des packages sans la version
 packages = []
 for package in dev_dependencies:
-    package_name = package.split("==")[0].strip()
-    packages.append(package_name)
+    name = re.sub(
+        r"\[.*?\]", "", package
+    )  # enlève les extras éventuels, ex: pkg[extra]
+    name = re.split(r"[<>=!~]", name)[
+        0
+    ].strip()  # coupe au premier caractère de version
+    packages.append(name)
 
 subprocess.run(
     [
