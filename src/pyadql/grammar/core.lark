@@ -1,0 +1,418 @@
+// ============================================================================
+// core.lark -- the recursive heart of ADQL: query structure, predicates,
+// value expressions, functions, and geometry.
+//
+// Spec reference: IVOA Recommendation ADQL 2.1 (2023-12-15), Annex A ("ADQL
+// grammar"), as supplied verbatim by the user. Comments of the form
+// [AnnexA #x] point at the exact <x> ::= ... production this rule
+// implements.
+//
+// WHY THIS IS ONE FILE, NOT SEVERAL:
+// SQL-like grammars are mutually recursive through subqueries: a
+// value_expression can contain a scalar subquery, which contains a
+// search_condition (WHERE), which contains predicates, which contain
+// value_expressions again -- and geometry/numeric/string functions all take
+// value_expression arguments while also *being* value expressions
+// themselves. This makes {value_expression, predicate, query_specification,
+// geometry, functions} one single strongly-connected cluster in the rule
+// dependency graph.
+// Lark's %import only resolves a rule's dependencies within the file it
+// was originally defined in -- it does not merge separately-imported copies
+// of the same rule across files, and two files directly %import-ing each
+// other causes runaway recursion in Lark's own grammar-of-grammars parser
+// (confirmed experimentally while building this: a toy two-file circular
+// import blew Python's recursion limit before producing a usable grammar).
+// %extend (used to bolt extra alternatives onto an already-imported rule)
+// only reaches usages within the *same* file that both imports and extends
+// the rule -- it does not propagate through an intermediate file that
+// imported the rule earlier (also confirmed experimentally: a rule used
+// two import-hops away from an %extend simply doesn't see the extension).
+// Given that, correctly compiling this mutually-recursive cluster requires
+// keeping it in one file. What *is* safely split out (see lexer.lark and
+// literals.lark) is everything that's a genuine dependency leaf: terminals,
+// identifiers, literals, and CAST target types.
+// ============================================================================
+
+// ============================================================================
+// TABLE OF CONTENTS
+// ============================================================================
+// SECTION 1 -- Query structure ................. WITH, SELECT, FROM, JOIN,
+//                                                 WHERE, GROUP BY, HAVING,
+//                                                 ORDER BY, OFFSET, set
+//                                                 operations (UNION/EXCEPT/
+//                                                 INTERSECT)
+// SECTION 2 -- Predicates and search conditions . AND/OR/NOT, comparisons,
+//                                                 BETWEEN, IN, LIKE/ILIKE,
+//                                                 IS NULL, EXISTS
+// SECTION 3 -- Value expressions ................ arithmetic (+ - * /),
+//                                                 string concatenation (||),
+//                                                 CAST, COALESCE
+// SECTION 4 -- Functions ......................... aggregates (COUNT/SUM/...),
+//                                                 numeric/trig functions,
+//                                                 string functions, UDFs
+// SECTION 5 -- Geometry (ADQL extension) ........ POINT, CIRCLE, BOX,
+//                                                 POLYGON, REGION, CONTAINS,
+//                                                 INTERSECTS, AREA, CENTROID,
+//                                                 COORD1/2, COORDSYS, DISTANCE
+//
+// All five sections live in this one file because they are mutually
+// recursive (see "WHY THIS IS ONE FILE, NOT SEVERAL" above) -- but each
+// section below is a self-contained, independently readable block: to work
+// on predicates, you only need to know that value_expression exists
+// somewhere (SECTION 3), not how it's built.
+// ============================================================================
+
+%import .lexer (NAME, STRING, SIGNED_NUMBER, UNSIGNED_INT, NOT_KW, LIKE_KW, ILIKE_KW, ALL_KW)
+%import .literals (column_reference, correlated_name, table_name, column_name, query_name, literal, number_literal, string_literal, true_literal, false_literal, cast_target, character_string_type, numeric_type, datetime_type, geometry_type, string_cast_type, numeric_cast_type, datetime_cast_type, geometry_cast_type)
+
+// ############################################################################
+// # SECTION 1 / 5 -- QUERY STRUCTURE
+// #   WITH (CTEs), SELECT, FROM, JOIN, WHERE, GROUP BY, HAVING, ORDER BY,
+// #   OFFSET, and the UNION/EXCEPT/INTERSECT set operators.
+// ############################################################################
+// [AnnexA #query_specification] ::= [with_clause] select_expression
+// ---------------------------------------------------------------------------
+query_specification: with_clause? select_expression
+
+// [AnnexA #with_clause] ::= WITH with_query {, with_query}...
+// Common table expressions (CTEs). ADQL 2.1 only allows them at the very
+// top of the main query (not nested, not recursive) -- see [AnnexA] prose:
+// "Common table expressions can be defined only in the main query" and
+// "The current version of ADQL does not support recursive [...] CTEs";
+// this grammar doesn't need to special-case that restriction itself since
+// with_clause only appears once, at query_specification's own top level.
+with_clause: "WITH"i with_query ("," with_query)*
+// [AnnexA #with_query] ::= query_name AS (select_expression)
+with_query: query_name "AS"i "(" select_expression ")"
+
+// [AnnexA #select_expression] ::= query_set_expression [order_by] [offset]
+// ORDER BY / OFFSET apply to the *whole* combined result (after any
+// UNION/EXCEPT/INTERSECT), never to an individual unparenthesized SELECT --
+// this is a deliberate change from ADQL 2.0, where every single SELECT had
+// its own trailing ORDER BY.
+select_expression: query_set_expression order_by_clause? offset_clause?
+
+// [AnnexA #query_set_expression]: UNION / EXCEPT, left-associative, both at
+// the same precedence level.
+?query_set_expression: query_set_term
+                      | query_set_expression "UNION"i ALL_KW? query_set_term -> union_op
+                      | query_set_expression "EXCEPT"i ALL_KW? query_set_term -> except_op
+
+// [AnnexA #query_set_term]: INTERSECT. Note the RHS is a full
+// query_set_expression (not just a term) per the spec's own production --
+// this is unusual (INTERSECT's right operand can itself contain an
+// unparenthesized UNION/EXCEPT) but is exactly what [AnnexA] specifies, so
+// it's implemented literally rather than "corrected" to a more typical
+// SQL precedence scheme.
+?query_set_term: query_set_primary
+               | query_set_term "INTERSECT"i ALL_KW? query_set_expression -> intersect_op
+
+// [AnnexA #query_set_primary] ::= select_query | ( select_expression )
+?query_set_primary: select_query
+                   | "(" select_expression ")" -> paren_select_expression
+
+// [AnnexA #select_query]: the actual SELECT ... FROM ... [WHERE] [GROUP BY]
+// [HAVING] -- notably, NO order_by/offset here anymore (see select_expression).
+select_query: "SELECT"i set_quantifier? set_limit? select_list from_clause where_clause? group_by_clause? having_clause?
+
+// [AnnexA #set_quantifier] ::= DISTINCT | ALL
+set_quantifier: "DISTINCT"i -> distinct
+              | "ALL"i -> all_
+// [AnnexA #set_limit] ::= TOP unsigned_decimal
+set_limit: "TOP"i UNSIGNED_INT -> top
+
+// [AnnexA #select_list] / #select_sublist
+select_list: "*" -> star_select
+           | select_sublist ("," select_sublist)* -> select_items
+select_sublist: derived_column
+              | qualified_star
+qualified_star: correlated_name "." "*"
+// [AnnexA #derived_column] ::= value_expression [as_clause]
+derived_column: value_expression as_clause?
+// [AnnexA #as_clause] ::= [AS] column_name
+as_clause: "AS"i? column_name -> alias
+
+// [AnnexA #from_clause] ::= FROM table_reference [, table_reference]...
+from_clause: "FROM"i table_reference ("," table_reference)*
+
+// [AnnexA #table_reference]: table_name | derived_table | joined_table.
+// Written iteratively here (primary followed by zero or more joins) rather
+// than as left-recursive joined_table, which is easier to fold into a
+// left-leaning Join tree in the transformer.
+table_reference: table_ref_primary joined_table*
+?table_ref_primary: table_name correlation_specification? -> table_ref
+                   | "(" select_expression ")" correlation_specification? -> derived_table
+                   | "(" table_reference ")" -> paren_table_ref
+
+// [AnnexA #correlation_specification] ::= [AS] correlation_name [(column_name_list)]
+correlation_specification: "AS"i? correlated_name column_name_list?
+column_name_list: "(" column_name ("," column_name)* ")"
+
+// [AnnexA #qualified_join]:
+//   table_reference [NATURAL] [join_type] JOIN table_reference [join_specification]
+joined_table: "NATURAL"i? join_type? "JOIN"i table_ref_primary join_specification? -> joined
+// [AnnexA #join_type] ::= INNER | outer_join_type [OUTER]
+join_type: "INNER"i -> inner_join
+         | "LEFT"i "OUTER"i? -> left_join
+         | "RIGHT"i "OUTER"i? -> right_join
+         | "FULL"i "OUTER"i? -> full_join
+// [AnnexA #join_specification] ::= join_condition | named_columns_join
+join_specification: "ON"i search_condition -> on_spec
+                   | "USING"i "(" column_name ("," column_name)* ")" -> using_spec
+
+// [AnnexA #where_clause]
+where_clause: "WHERE"i search_condition
+// [AnnexA #group_by_clause] ::= GROUP BY group_by_term_list
+// [AnnexA #group_by_term] ::= column_reference | value_expression -- both
+// alternatives ultimately accept the same syntax here since column_reference
+// is itself reachable through value_expression, so we just use
+// value_expression directly.
+group_by_clause: "GROUP"i "BY"i value_expression ("," value_expression)*
+// [AnnexA #having_clause]
+having_clause: "HAVING"i search_condition
+// [AnnexA #order_by_clause] ::= ORDER BY order_by_term_list
+order_by_clause: "ORDER"i "BY"i sort_spec ("," sort_spec)*
+// [AnnexA #offset_clause] ::= OFFSET unsigned_decimal
+offset_clause: "OFFSET"i UNSIGNED_INT
+// [AnnexA #order_by_term] ::= order_by_expression [order_by_direction]
+// [AnnexA #order_by_expression] ::= unsigned_decimal | column_reference | value_expression
+// -- again all three collapse to value_expression (an integer *is* a
+// value_expression, via SIGNED_NUMBER; a bare unsigned_decimal here is the
+// classic SQL "ORDER BY 1" column-position shorthand, which callers can
+// recognize post-parse by checking isinstance(expr, NumberLiteral)).
+sort_spec: value_expression order_direction?
+// [AnnexA #order_by_direction] ::= ASC | DESC
+order_direction: "ASC"i -> asc
+               | "DESC"i -> desc
+
+// ############################################################################
+// # SECTION 2 / 5 -- PREDICATES AND SEARCH CONDITIONS
+// #   AND/OR/NOT boolean logic, comparisons, BETWEEN, IN, LIKE/ILIKE,
+// #   IS [NOT] NULL, EXISTS. Every operand here is a value_expression
+// #   (SECTION 3, below) -- you don't need to know how those are built to
+// #   read this section.
+// ############################################################################
+// [AnnexA #search_condition], #boolean_term, #boolean_factor, #boolean_primary
+?search_condition: search_condition "OR"i boolean_term -> or_
+                  | boolean_term
+?boolean_term: boolean_term "AND"i boolean_factor -> and_
+              | boolean_factor
+?boolean_factor: "NOT"i boolean_primary -> not_
+               | boolean_primary
+?boolean_primary: "(" search_condition ")"
+                | predicate
+
+// [AnnexA #predicate]: comparison | between | in | like/ilike | null | exists.
+?predicate: comparison_predicate
+          | between_predicate
+          | in_predicate
+          | like_predicate
+          | null_predicate
+          | exists_predicate
+
+// [AnnexA #comparison_predicate] / #comp_op
+comparison_predicate: value_expression COMP_OP value_expression
+COMP_OP: "=" | "!=" | "<>" | "<=" | ">=" | "<" | ">"
+
+// [AnnexA #between_predicate]
+between_predicate: value_expression NOT_KW? "BETWEEN"i value_expression "AND"i value_expression
+// [AnnexA #in_predicate] / #in_predicate_value / #in_value_list
+in_predicate: value_expression NOT_KW? "IN"i in_predicate_value
+in_predicate_value: "(" in_value_list ")"
+                   | "(" select_expression ")" -> in_subquery
+in_value_list: value_expression ("," value_expression)*
+
+// [AnnexA #like_predicate] ::= match_value [NOT] LIKE pattern
+//                             | match_value [NOT] ILIKE pattern
+// ILIKE (case-insensitive LIKE) is an ADQL 2.1 addition, introduced together
+// with LOWER -- see the standard editor's blog, "LOWER and ILIKE".
+like_predicate: value_expression NOT_KW? (LIKE_KW | ILIKE_KW) value_expression
+// [AnnexA #null_predicate] ::= column_reference IS [NOT] NULL
+// (the spec restricts the left side to a column_reference; we accept any
+// value_expression, a harmless superset matching real-world usage, e.g.
+// `IS NOT NULL` after a function call)
+null_predicate: value_expression "IS"i NOT_KW? "NULL"i
+// [AnnexA #exists_predicate] ::= EXISTS table_subquery
+exists_predicate: "EXISTS"i "(" select_expression ")"
+
+// ############################################################################
+// # SECTION 3 / 5 -- VALUE EXPRESSIONS
+// #   Arithmetic (+ - * /), string concatenation (||), CAST, COALESCE, and
+// #   `primary` -- the dispatch point that ties in literals (SECTION 0,
+// #   literals.lark), functions (SECTION 4), and geometry (SECTION 5).
+// ############################################################################
+// [AnnexA #value_expression] ::= NULL | numeric_value_expression |
+//                                  string_value_expression | geometry_value_expression
+?value_expression: "NULL"i -> null_literal
+                  | numeric_value_expression
+                  | string_concat
+
+// [AnnexA #concatenation] / #concatenation_operator ( || )
+?string_concat: string_concat "||" string_operand -> concat
+              | string_operand
+?string_operand: numeric_value_expression
+
+// [AnnexA #numeric_value_expression] / #term / #factor: standard +,-,*,/
+// precedence and unary sign, exactly as in SQL92.
+?numeric_value_expression: numeric_value_expression "+" term -> add
+                          | numeric_value_expression "-" term -> sub
+                          | term
+?term: term "*" factor -> mul
+     | term "/" factor -> div
+     | factor
+?factor: "-" primary -> neg
+       | "+" primary -> pos
+       | primary
+
+// [AnnexA #value_expression_primary]: unsigned_value_specification |
+//   column_reference | set_function_specification | cast_specification |
+//   coalesce_expression | ( value_expression ).
+// function_call bundles set/geometry/numeric/string/user-defined function
+// calls into one dispatch point -- see SECTION 4/5 below. AnnexA 2.1 keeps
+// set_function_specification separate from the geometry/numeric/string
+// function nonterminals (which are reached via numeric_value_function /
+// string_value_function / geometry_value_function, each its own branch of
+// value_expression's three top alternatives), but since none of those
+// concrete function names ever collide, folding them into a single
+// `function_call` dispatch here is a harmless simplification: it changes
+// nothing about which queries are accepted, only how the grammar is
+// factored.
+?primary: literal
+        | column_reference
+        | function_call
+        | cast_specification
+        | coalesce_expression
+        | "(" value_expression ")"
+        | "(" select_expression ")" -> scalar_subquery
+
+// [AnnexA #cast_specification] ::= CAST(value_expression AS cast_target) -- 2.1 only.
+cast_specification: "CAST"i "(" value_expression "AS"i cast_target ")"
+
+// [AnnexA #coalesce_expression] ::= COALESCE(value_expression {, value_expression}...) -- 2.1 only.
+coalesce_expression: "COALESCE"i "(" value_expression ("," value_expression)+ ")"
+
+// ############################################################################
+// # SECTION 4 / 5 -- FUNCTIONS
+// #   Aggregates (COUNT/SUM/AVG/MIN/MAX), numeric/trig functions, string
+// #   functions (LOWER/UPPER), user-defined functions. Geometry functions
+// #   are dispatched from here too, but defined separately in SECTION 5.
+// ############################################################################
+function_call: set_function
+             | geometry_function
+             | numeric_function
+             | string_function
+             | user_defined_function
+
+// [AnnexA #set_function_specification] / #general_set_function / #set_function_type
+set_function: SET_FUNC_NAME "(" set_quantifier? value_expression ")"
+            | "COUNT"i "(" "*" ")" -> count_star
+SET_FUNC_NAME: "COUNT"i | "SUM"i | "AVG"i | "MAX"i | "MIN"i
+
+// [AnnexA #math_function] + [AnnexA #trig_function] + [AnnexA #in_unit_function],
+// folded into one rule since they share identical call syntax (NAME(args)).
+// IN_UNIT is new in ADQL 2.1.
+numeric_function: NUM_FUNC_NAME "(" arg_list? ")"
+NUM_FUNC_NAME: "ABS"i | "CEILING"i | "DEGREES"i | "EXP"i | "FLOOR"i | "LOG"i | "LOG10"i
+             | "MOD"i | "PI"i | "POWER"i | "RAND"i | "ROUND"i | "SIGN"i | "SQRT"i
+             | "TRUNCATE"i | "RADIANS"i | "IN_UNIT"i
+             | "ACOS"i | "ASIN"i | "ATAN"i | "ATAN2"i | "COS"i | "COT"i | "SIN"i | "TAN"i
+
+// [AnnexA #case_folding_function]: LOWER / UPPER only in AnnexA 2.1
+// (COORDSYS -- string_geometry_function -- lives in SECTION 5, since it
+// takes a geometry argument rather than a string one).
+string_function: STR_FUNC_NAME "(" arg_list? ")"
+STR_FUNC_NAME: "LOWER"i | "UPPER"i
+
+// [AnnexA #user_defined_function]: any_identifier(arg[, arg]...). Lower
+// priority than the named-function rules above so that reserved ADQL
+// function names (CONTAINS, POINT, COUNT, ...) are matched as themselves
+// rather than swallowed here as a generic call.
+user_defined_function.-1: correlated_name "(" arg_list? ")" -> udf
+
+arg_list: value_expression ("," value_expression)*
+
+// ############################################################################
+// # SECTION 5 / 5 -- GEOMETRY (ADQL EXTENSION)
+// #   POINT, CIRCLE, BOX, POLYGON, REGION, CONTAINS, INTERSECTS, AREA,
+// #   CENTROID, COORD1, COORD2, COORDSYS, DISTANCE. This is the part of the
+// #   grammar that's specific to ADQL (not inherited from SQL92).
+// ############################################################################
+// AnnexA 2.1 actually splits these across three different value_expression
+// branches by return type: predicate_geometry_function (CONTAINS/INTERSECTS)
+// and non_predicate_geometry_function (AREA/COORD1/COORD2/DISTANCE) return
+// numbers, so are reached via numeric_value_function; string_geometry_function
+// (COORDSYS) returns a string, reached via string_value_function; only
+// geometry_value_function (BOX/CENTROID/CIRCLE/POINT/POLYGON/REGION) returns
+// an actual geometry value. We deliberately fold all of them into one
+// `geometry_function` dispatch point (called from `function_call` above)
+// rather than mirroring that three-way split: it's a harmless
+// simplification since none of these names collide with anything else, and
+// it avoids duplicating near-identical plumbing three times over.
+geometry_function: point_expr | circle_expr | box_expr | polygon_expr | region_expr
+                  | centroid_expr | area_expr | coord1_expr | coord2_expr
+                  | coordsys_expr | distance_expr | contains_expr | intersects_expr
+
+// [AnnexA #contains] / #intersects
+contains_expr: "CONTAINS"i "(" value_expression "," value_expression ")"
+intersects_expr: "INTERSECTS"i "(" value_expression "," value_expression ")"
+
+// [AnnexA #point]: POINT([coord_sys ,] coordinates) -- coord_sys is now
+// OPTIONAL as of ADQL 2.1 (it was mandatory in 2.0).
+point_expr: "POINT"i "(" (coord_sys ",")? coordinates ")"
+// [AnnexA #circle]: CIRCLE([coord_sys ,] circle_center, radius)
+// [AnnexA #circle_center] ::= coordinates | coord_value -- new in 2.1: the
+// center can now be a ready-made point-valued expression (a column, a
+// POINT()/CENTROID() call, or a UDF) instead of only a raw ra/dec pair.
+circle_expr: "CIRCLE"i "(" (coord_sys ",")? circle_center "," radius ")"
+circle_center: coordinates | coord_value
+// [AnnexA #box]: BOX([coord_sys ,] box_center, width, height)
+// [AnnexA #box_center] ::= coordinates | coord_value -- same 2.1 addition as circle_center.
+// Note: BOX is deprecated as of ADQL 2.1 ("will be removed from future
+// versions of the specification") but still part of the 2.1 grammar, so it
+// remains supported here.
+box_expr: "BOX"i "(" (coord_sys ",")? box_center "," numeric_value_expression "," numeric_value_expression ")"
+box_center: coordinates | coord_value
+// [AnnexA #polygon]: POLYGON([coord_sys ,] polygon_vertices)
+// [AnnexA #polygon_vertices]: at least 3 <coordinates> pairs, OR at least 3
+// <coord_value>s -- new in 2.1, the "coord_value" form lets each vertex be
+// a point-valued expression instead of a raw ra/dec pair. The two forms
+// are not mixed within one call.
+polygon_expr: "POLYGON"i "(" (coord_sys ",")? polygon_vertices ")"
+?polygon_vertices: coordinates ("," coordinates)+ -> polygon_vertices_coords
+                  | coord_value ("," coord_value)+ -> polygon_vertices_points
+// [AnnexA #region]: REGION(character_string_literal) -- an STC-S string.
+// Narrowed to a plain string literal in 2.1 (2.0 allowed any
+// string_value_expression).
+region_expr: "REGION"i "(" STRING ")"
+// [AnnexA #centroid]: CENTROID(geometry_value_expression)
+centroid_expr: "CENTROID"i "(" value_expression ")"
+// [AnnexA #area]: AREA(geometry_value_expression)
+area_expr: "AREA"i "(" value_expression ")"
+// [AnnexA #coord1] / #coord2: COORD1/COORD2(coord_value)
+coord1_expr: "COORD1"i "(" coord_value ")"
+coord2_expr: "COORD2"i "(" coord_value ")"
+// [AnnexA #extract_coordsys]: COORDSYS(geometry_value_expression)
+coordsys_expr: "COORDSYS"i "(" value_expression ")"
+// [AnnexA #distance_function]: two overloads --
+//   DISTANCE(coord_value, coord_value)  -- two point-valued expressions, or
+//   DISTANCE(num, num, num, num)        -- ra1, dec1, ra2, dec2 directly.
+// The 4-argument numeric form is new in ADQL 2.1, added specifically as the
+// recommended, efficiently-optimizable way to phrase a sky crossmatch.
+distance_expr: "DISTANCE"i "(" coord_value "," coord_value ")" -> distance_points
+             | "DISTANCE"i "(" numeric_value_expression "," numeric_value_expression "," numeric_value_expression "," numeric_value_expression ")" -> distance_coords
+
+// [AnnexA #coord_sys] ::= character_string_literal -- narrowed to a plain
+// string literal in 2.1 (2.0 allowed any string_value_expression).
+coord_sys: STRING
+// [AnnexA #coord_value] ::= point_value | column_reference
+coord_value: point_value | column_reference
+// [AnnexA #point_value] ::= point | centroid | user_defined_function -- new
+// nonterminal in 2.1, used wherever a ready-made point is expected (circle/
+// box centers, polygon vertices in "point" form).
+?point_value: point_expr | centroid_expr | udf_as_point
+// UDF call reachable from point_value without re-triggering the
+// user_defined_function.-1 priority dance (arg_list already defined above).
+udf_as_point: correlated_name "(" arg_list? ")"
+// [AnnexA #coordinate1] / #coordinate2 / #coordinates]: a raw ra, dec pair.
+coordinates: numeric_value_expression "," numeric_value_expression
+radius: numeric_value_expression

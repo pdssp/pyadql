@@ -1,0 +1,17 @@
+classDiagram
+    Join *-- TableRef : left / right
+    Join *-- DerivedTable : left / right
+    Join *-- Join : left / right
+    DerivedTable *-- SelectExpression : subquery
+
+    class TableRef {
+        +name: str
+        +alias: str
+    }
+    class DerivedTable { +alias: str }
+    class Join {
+        +join_type: "INNER"|"LEFT"|"RIGHT"|"FULL"
+        +natural: bool
+        +on
+        +using: str[]
+    }

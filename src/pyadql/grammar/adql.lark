@@ -1,0 +1,43 @@
+// ============================================================================
+// adql.lark -- top-level entry point for the ADQL 2.1 grammar.
+//
+// This file's only job is to assemble the other grammar modules, name the
+// start rule, and -- critically -- explicitly import every rule/alias name
+// by name so they keep their clean, unprefixed names in the final parse
+// tree (ADQLTransformer in parser.py dispatches on these exact names; any
+// rule reachable only *transitively*, without being listed explicitly
+// here, would show up in the parse tree renamed with a "core__" or
+// "core__literals__" prefix, and silently fail to match any transformer
+// method).
+//
+// Note the literals.lark rules (column_reference, literal, ...) below are
+// imported FROM .core, not directly from .literals: core.lark already
+// imports them from literals.lark for its own internal use, and Lark does
+// not merge separately-imported copies of the same rule -- importing them
+// a second time straight from .literals here would create an unrelated,
+// unused copy while core.lark's actual rules (derived_column, primary, ...)
+// keep referencing their own, differently-namespaced copy. Going through
+// .core ensures we're naming the exact copy that's actually wired in.
+// Also note: each %import must stay on a single logical line -- Lark's own
+// grammar-file parser rejects a newline inside the parenthesized list.
+//
+//   lexer.lark     terminals (NAME, STRING, numbers, keyword tokens, %ignore)
+//   literals.lark   identifiers, literals, CAST target types
+//   core.lark       everything else: query structure, predicates, value
+//                   expressions, functions, geometry (kept in one file
+//                   because it's genuinely mutually recursive through
+//                   subqueries -- see the header comment in core.lark for
+//                   why that file isn't split further)
+//
+// Loaded from Python via Lark.open("adql.lark", rel_to=__file__, ...), which
+// resolves the relative %import paths below against this file's directory.
+// ============================================================================
+
+%import .core (COMP_OP, NUM_FUNC_NAME, SET_FUNC_NAME, STR_FUNC_NAME, NOT_KW, LIKE_KW, ILIKE_KW, ALL_KW, add, alias, all_, and_, area_expr, arg_list, as_clause, asc, between_predicate, boolean_factor, boolean_primary, boolean_term, box_center, box_expr, cast_specification, cast_target, centroid_expr, character_string_type, circle_center, circle_expr, coalesce_expression, column_name, column_name_list, column_reference, comparison_predicate, concat, contains_expr, coord1_expr, coord2_expr, coord_sys, coord_value, coordinates, coordsys_expr, correlated_name, correlation_specification, count_star, datetime_cast_type, datetime_type, derived_column, derived_table, desc, distance_coords, distance_expr, distance_points, distinct, div, except_op, exists_predicate, factor, false_literal, from_clause, full_join, function_call, geometry_cast_type, geometry_function, geometry_type, group_by_clause, having_clause, in_predicate, in_predicate_value, in_subquery, in_value_list, inner_join, intersect_op, intersects_expr, join_specification, join_type, joined, joined_table, left_join, like_predicate, literal, mul, neg, not_, null_literal, null_predicate, number_literal, numeric_cast_type, numeric_function, numeric_type, numeric_value_expression, offset_clause, on_spec, or_, order_by_clause, order_direction, paren_select_expression, paren_table_ref, point_expr, point_value, polygon_expr, polygon_vertices, polygon_vertices_coords, polygon_vertices_points, pos, predicate, primary, qualified_star, query_name, query_set_expression, query_set_primary, query_set_term, query_specification, radius, region_expr, right_join, scalar_subquery, search_condition, select_expression, select_items, select_list, select_query, select_sublist, set_function, set_limit, set_quantifier, sort_spec, star_select, string_cast_type, string_concat, string_function, string_literal, string_operand, sub, table_name, table_ref, table_ref_primary, table_reference, term, top, true_literal, udf, udf_as_point, union_op, user_defined_function, using_spec, value_expression, where_clause, with_clause, with_query)
+%import .lexer (WS_TERM, COMMENT_TERM)
+
+
+start: query_specification
+
+%ignore WS_TERM
+%ignore COMMENT_TERM

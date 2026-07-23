@@ -1,0 +1,19 @@
+classDiagram
+    BinaryOp *-- Expr : left / right
+    UnaryOp *-- Expr : operand
+    Between *-- Expr : expr / low / high
+    InPredicate *-- Expr : expr
+    InPredicate *-- SelectExpression : values
+    Like *-- Expr : expr / pattern
+    IsNull *-- Expr : expr
+    Exists *-- SelectExpression : subquery
+
+    class BinaryOp { +op: str }
+    class UnaryOp { +op: "NOT"|"-"|"+" }
+    class Between { +negated: bool }
+    class InPredicate { +negated: bool }
+    class Like {
+        +negated: bool
+        +case_insensitive: bool
+    }
+    class IsNull { +negated: bool }

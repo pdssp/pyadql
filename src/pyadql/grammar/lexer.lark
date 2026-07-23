@@ -1,0 +1,54 @@
+// ============================================================================
+// lexer.lark -- terminals shared by every other grammar file.
+//
+// Spec reference: IVOA Recommendation ADQL 2.1 (2023-12-15), Annex A ("ADQL
+// grammar"). Comments of the form [AnnexA #x] point at the exact
+// <x> ::= ... production this terminal/rule implements, so a diff against a
+// future spec revision is a matter of re-reading that one production.
+//
+// General simplification notes (applied throughout every .lark file, not
+// just here):
+//   BNF `[ x ]`        -> Lark `x?`
+//   BNF `{ x }...`      -> Lark `x*` (zero or more) or `x+` (one or more,
+//                          when the BNF already guarantees at least one
+//                          occurrence before the repeated group)
+//   BNF `<x> | <y>`     -> Lark `x | y` (identical)
+//   BNF quoted keyword  -> Lark `"KEYWORD"i` (case-insensitive literal)
+// ============================================================================
+
+// [AnnexA #identifier] / #regular_identifier / #delimited_identifier: a
+// delimited (double-quoted) identifier is folded into the same NAME
+// terminal rather than handled as a separate token, and unquoted in the
+// transformer. A doubled double-quote ("") inside a delimited identifier
+// escapes a literal double-quote character ([AnnexA #double_quote_symbol]),
+// exactly like '' does inside a string literal (STRING, below); e.g.
+// "Table""X" denotes the single identifier Table"X.
+NAME: /[A-Za-z_][A-Za-z0-9_]*/ | /"([^"]|"")*"/
+
+// Named (not anonymous) keyword terminals: Lark discards unnamed string
+// literals from the parse tree by default, so anything a transformer needs
+// to detect the *presence* of (was it NOT? was it LIKE or ILIKE?) has to be
+// a named terminal like these, or it silently vanishes from the tree.
+NOT_KW: "NOT"i
+LIKE_KW: "LIKE"i
+ILIKE_KW: "ILIKE"i
+ALL_KW: "ALL"i
+
+// [AnnexA #character_string_literal]: single-quoted, '' escapes a literal quote.
+STRING: /'([^']|'')*'/
+
+// [AnnexA #unsigned_decimal]: digit+ (renamed from 2.0's <unsigned_integer>,
+// same meaning).
+UNSIGNED_INT: /[0-9]+/
+
+// [AnnexA #exact_numeric_literal] / #approximate_numeric_literal combined
+// into a single regex terminal: <unsigned_decimal> [ . [ <unsigned_decimal> ] ]
+// | . <unsigned_decimal>, optionally followed by E<exponent>.
+SIGNED_NUMBER: /[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?/
+
+// [AnnexA #comment]: -- to end of line (SQL92-style line comment).
+COMMENT_TERM: /--[^\n]*/
+
+%import common.WS -> WS_TERM
+%ignore WS_TERM
+%ignore COMMENT_TERM

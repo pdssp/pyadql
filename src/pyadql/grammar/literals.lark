@@ -1,0 +1,76 @@
+// ============================================================================
+// literals.lark -- identifiers, literals, table/column names, CAST target types.
+//
+// Standalone leaf file: depends only on lexer.lark, nothing here depends on
+// value_expression / predicates / query structure, so this file is safe to
+// import from anywhere without risking the cross-file cycle issues that
+// affect the recursive "core" of the grammar (see core.lark's header for a
+// full explanation of that constraint).
+// ============================================================================
+
+%import .lexer (NAME, STRING, SIGNED_NUMBER, UNSIGNED_INT)
+
+// [AnnexA #column_reference] ::= [qualifier .] column_name
+column_reference: correlated_name ("." NAME)*
+correlated_name: NAME
+// [AnnexA #table_name] ::= [schema_name .] identifier
+// (schema_name itself is [catalog_name .] unqualified_schema_name -- we
+// don't model catalog/schema/table as three separate nonterminals, just a
+// generic dotted NAME chain, which accepts the same inputs.)
+table_name: NAME ("." NAME)*
+column_name: NAME
+// [AnnexA #query_name]: the name given to a WITH ... AS (...) common table
+// expression.
+query_name: NAME
+
+// [AnnexA #unsigned_literal] / #general_literal / TRUE/FALSE.
+// NULL is NOT included here: AnnexA 2.1 lists it directly as a
+// <value_expression> alternative (`<value_expression> ::= NULL | ...`)
+// rather than through <literal>/<general_literal> as in 2.0 -- handled in
+// core.lark's value_expression rule instead.
+?literal: SIGNED_NUMBER -> number_literal
+        | STRING -> string_literal
+        | "TRUE"i -> true_literal
+        | "FALSE"i -> false_literal
+
+// -- CAST target types --------------------------------------------------
+// [AnnexA #cast_target] ::= character_string_type | numeric_type |
+//                            datetime_type | geometry_type
+// Unlike a generic "any identifier" data type, ADQL 2.1 enumerates the
+// legal CAST targets explicitly -- so we do too, rather than accepting an
+// arbitrary NAME as a looser SQL dialect might.
+?cast_target: character_string_type
+            | numeric_type
+            | datetime_type
+            | geometry_type
+
+// Named (not anonymous) terminals: Lark discards unnamed string literals
+// from the parse tree by default, so the transformer would otherwise never
+// see *which* type keyword actually matched (same issue as NOT_KW/LIKE_KW
+// in lexer.lark). Each is a single word -- DOUBLE PRECISION (two words) is
+// combined at the *rule* level below, since %ignore WS (whitespace
+// skipping) applies between rule elements but NOT inside a single terminal
+// definition.
+STRING_TYPE_KW: "CHAR"i | "VARCHAR"i
+EXACT_NUMERIC_KW: "SMALLINT"i | "INTEGER"i | "BIGINT"i
+REAL_KW: "REAL"i
+DOUBLE_KW: "DOUBLE"i
+PRECISION_KW: "PRECISION"i
+DATETIME_KW: "TIMESTAMP"i
+GEOMETRY_TYPE_KW: "POINT"i | "CIRCLE"i | "POLYGON"i
+
+// [AnnexA #character_string_type] ::= CHAR [(length)] | VARCHAR [(length)]
+character_string_type: STRING_TYPE_KW ("(" UNSIGNED_INT ")")? -> string_cast_type
+
+// [AnnexA #numeric_type] ::= exact_numeric_type | approximate_numeric_type
+// [AnnexA #exact_numeric_type] ::= SMALLINT | INTEGER | BIGINT
+// [AnnexA #approximate_numeric_type] ::= REAL | DOUBLE PRECISION
+numeric_type: EXACT_NUMERIC_KW -> numeric_cast_type
+            | REAL_KW -> numeric_cast_type
+            | DOUBLE_KW PRECISION_KW -> numeric_cast_type
+
+// [AnnexA #datetime_type] ::= TIMESTAMP
+datetime_type: DATETIME_KW -> datetime_cast_type
+
+// [AnnexA #geometry_type] ::= POINT | CIRCLE | POLYGON
+geometry_type: GEOMETRY_TYPE_KW -> geometry_cast_type

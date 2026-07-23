@@ -1,0 +1,22 @@
+classDiagram
+    Point *-- Expr : coordsys? / ra / dec
+    Circle *-- Expr : coordsys? / center / radius
+    Box *-- Expr : coordsys? / center / width / height
+    Polygon *-- Expr : coordsys? / vertices
+    Coordinates *-- Expr : ra / dec
+    Contains *-- Expr : geom1 / geom2
+    Intersects *-- Expr : geom1 / geom2
+    Distance *-- Expr : args
+
+    class Point
+    class Circle
+    class Box
+    class Polygon { +vertices: Expr[] }
+    class Coordinates
+    class Region { +stcs: str }
+    class Centroid
+    class Area
+    class Coord1
+    class Coord2
+    class Coordsys
+    class Distance { +numeric_form: bool }

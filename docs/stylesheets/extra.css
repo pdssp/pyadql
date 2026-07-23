@@ -1,0 +1,24 @@
+/* Agrandit le logo dans la barre latérale */
+.md-sidebar--primary .md-logo {
+    width: 100px;  /* Largeur personnalisée */
+    height: auto;  /* Hauteur automatique pour conserver les proportions */
+}
+
+/* Agrandit le logo dans l'en-tête (si utilisé) */
+.md-header .md-logo {
+    width: 150px;
+    height: auto;
+}
+
+/* Workaround for a mkdocs-with-pdf/WeasyPrint bug: "min-height: 100vh" on
+   "article, section + section" (in the plugin's own print stylesheet)
+   silently truncates the PDF after the first unbreakable section that
+   doesn't fit on one page (WeasyPrint stops laying out further siblings
+   instead of raising an error). Forcing it back to auto restores the rest
+   of the document. */
+@media print {
+    article,
+    section + section {
+        min-height: auto !important;
+    }
+}

@@ -1,0 +1,36 @@
+classDiagram
+    SelectExpression *-- Query : body
+    SelectExpression *-- SetOperation : body
+    SelectExpression *-- CTE : with_clause
+    SelectExpression *-- SortItem : order_by
+    CTE *-- SelectExpression : query
+    SetOperation *-- Query : left / right
+    SetOperation *-- SetOperation : left / right
+    SetOperation *-- SelectExpression : left / right
+    Query *-- SelectItem : select_list
+    Query *-- TableRef : from_clause
+    Query *-- DerivedTable : from_clause
+    Query *-- Join : from_clause
+
+    class SelectExpression {
+        +body
+        +order_by: SortItem[]
+        +offset: int
+        +with_clause: CTE[]
+    }
+    class Query {
+        +distinct: bool
+        +top: int
+        +select_list
+        +from_clause
+        +where
+        +group_by
+        +having
+    }
+    class SetOperation {
+        +op: "UNION"|"EXCEPT"|"INTERSECT"
+        +distinct: bool
+    }
+    class CTE { +name: str }
+    class SelectItem { +alias: str }
+    class SortItem { +direction: "ASC"|"DESC" }

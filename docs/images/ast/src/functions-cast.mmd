@@ -1,0 +1,18 @@
+classDiagram
+    FunctionCall *-- Expr : args
+    Cast *-- CastType : type
+    Cast *-- Expr : expr
+    Coalesce *-- Expr : args
+    UserFunctionCall *-- Expr : args
+    ScalarSubquery *-- SelectExpression : subquery
+
+    class FunctionCall {
+        +name: str
+        +distinct: bool
+    }
+    class CountStar
+    class CastType {
+        +name: str
+        +params: int[]
+    }
+    class UserFunctionCall { +name: str }

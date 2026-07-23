@@ -1,0 +1,82 @@
+site_name: PyADQL
+site_url: https://pdssp.pages.cnes.fr/common/pyadql
+repo_url: https://gitlab.cnes.fr/pdssp/common/pyadql
+repo_name: pyadql
+theme:
+  name: material
+  language: en
+  logo: images/logo.png
+  features:
+    - navigation.tabs
+    - navigation.indexes
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.copy
+  palette:
+    primary: indigo
+    accent: indigo
+  font:
+    text: Roboto
+    code: Roboto Mono
+extra_css:
+  - stylesheets/extra.css
+exclude_docs: |
+  images/ast/src/
+nav:
+  - Home: index.md
+  - Content:
+      - History: history.md
+      - Introduction: introduction.md
+      - Applicable Documents: applicable_docs.md
+      - Glossary: glossary.md
+      - Conventions: conventions.md
+      - Purpose: purpose.md
+      - External View: external_view.md
+      - Operations Environment: operations_environment.md
+      - Operations Basics: operations_basics.md
+      - Operation Manual: operation_manual.md
+      - Reference Manual: reference_manual.md
+      - Tutorial: tutorial.md
+      - AST guided tour: AST.md
+  - Tests results: report.html
+  - Tests coverage: _static/coverage/index.html
+  - Legal : legal.md
+extra_javascript:
+  - js/katex.js
+  - https://unpkg.com/katex@0/dist/katex.min.js
+  - https://unpkg.com/katex@0/dist/contrib/auto-render.min.js
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
+plugins:
+  - search
+  - macros:
+      modules:
+        - macros.macros
+  - with-pdf:
+      author: Jean-Christophe Malapert
+      copyright: "\xA9 2026 Centre National d'Etudes Spatiales"
+      cover: true
+      cover_title: PyADQL documentation
+      output_path: docs/pyadql.pdf
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+            show_root_heading: false
+            show_root_full_path: false
+            show_root_members_full_path: false
+            show_signature: true
+            show_signature_annotations: true
+            show_docstring_description: true
+            show_docstring_examples: true
+            show_docstring_attributes: true
+            show_docstring_parameters: true
+            show_docstring_returns: true
+            show_docstring_raises: true
