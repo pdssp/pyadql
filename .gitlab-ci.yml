@@ -53,6 +53,7 @@ sonarqube:
 # because we need git
 .python-base:
   before_script:
+    - !reference [.python-scripts]
     - install_ca_certs "${CUSTOM_CA_CERTS:-$DEFAULT_CA_CERTS}"
     - configure_netrc
     # Ignore cached files
