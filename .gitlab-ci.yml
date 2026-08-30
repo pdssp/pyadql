@@ -62,14 +62,13 @@ prepare_version:
       dotenv: version.env
 
 pages:
+  extends: .python-base
   stage: publish
-  image: ${UL_ARTIFACTORY_HOST}/pdssp-docker/astral-sh/uv:python3.12-bookworm-slim
   retry: 2
   script:
-    - apt-get update
-    - apt-get install -y curl ca-certificates nodejs npm graphviz
+    - install_requirements
+    - apt-get update && apt-get install -y --no-install-recommends nodejs npm graphviz
     - npm config set cafile "${CNES_CERTIFICATE}"
-    - make install-dev
     - make doc
     - mv site public
   rules:
