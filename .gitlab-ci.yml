@@ -54,10 +54,6 @@ sonarqube:
   needs:
     - py-pytest
 
-docker-trivy:
-  variables:
-    TRIVY_DISABLE_VEX_NOTICE: "true"
-
 prepare_version:
   stage: test
   image: ${UL_ARTIFACTORY_HOST}/pdssp-docker/astral-sh/uv:python{{cookiecutter.python_version[0]}}-bookworm-slim
