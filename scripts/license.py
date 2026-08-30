@@ -1,5 +1,5 @@
 import re
-import subprocess
+import subprocess  # nosemgrep: gitlab.bandit.B404
 
 import toml
 
@@ -22,7 +22,7 @@ for package in dev_dependencies:
     ].strip()  # coupe au premier caractère de version
     packages.append(name)
 
-subprocess.run(
+subprocess.run(  # nosemgrep: gitlab.bandit.B603
     [
         "pip-licenses",
         "--from",
