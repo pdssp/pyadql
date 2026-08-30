@@ -82,16 +82,16 @@ pages:
     paths:
       - public
 
-sync_to_github:
-  stage: sync
-  retry: 2
-  image: ${CI_TEMPLATE_REGISTRY_HOST}/${TAG_DOCKER_IMAGE_PYTHON}
-  script:
-    - git config --global user.email "jean-christophe.malapert@cnes.fr"
-    - git config --global user.name "Jean-Christophe Malapert"
-    - git config --global http.sslCAInfo "${CNES_CERTIFICATE}"
-    - git remote add github https://${GITHUB_TOKEN}@github.com/pdssp/pyadql
-    - git fetch github
-    - git push --force github "HEAD:refs/heads/main"
-  only:
-    - main  # Exécute uniquement pour les modifications sur la branche "main"
+# sync_to_github:
+#   stage: sync
+#   retry: 2
+#   image: ${CI_TEMPLATE_REGISTRY_HOST}/${TAG_DOCKER_IMAGE_PYTHON}
+#   script:
+#     - git config --global user.email "jean-christophe.malapert@cnes.fr"
+#     - git config --global user.name "Jean-Christophe Malapert"
+#     - git config --global http.sslCAInfo "${CNES_CERTIFICATE}"
+#     - git remote add github https://${GITHUB_TOKEN}@github.com/pdssp/pyadql
+#     - git fetch github
+#     - git push --force github "HEAD:refs/heads/main"
+#   only:
+#     - main  # Exécute uniquement pour les modifications sur la branche "main"
