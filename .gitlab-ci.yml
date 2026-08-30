@@ -1,15 +1,4 @@
 include:
-  - component: $CI_SERVER_FQDN/to-be-continuous/docker/gitlab-ci-docker@8.3.0
-    inputs:
-      build-tool: "buildah"
-      build-args: >
-        --build-arg BASE_IMAGE_REPO=${UL_ARTIFACTORY_HOST}/pdssp-docker
-        --secret id=ca_cert,src=${CNES_CERTIFICATE}
-        --secret id=pip_index_url,src=PIP_INDEX_URL,type=env
-      snapshot-image: "${UL_ARTIFACTORY_HOST}/pdssp-docker-dev-local/${CI_PROJECT_NAME}:${CI_COMMIT_REF_NAME}"
-      release-image: "${UL_ARTIFACTORY_HOST}/pdssp-docker-prod-local/${CI_PROJECT_NAME}:${CI_COMMIT_REF_NAME}"
-      prod-publish-strategy: "auto"
-      healthcheck-disabled: true
 
   - component: $CI_SERVER_FQDN/to-be-continuous/python/gitlab-ci-python@9.6.1
     inputs:
@@ -96,7 +85,6 @@ pages:
   artifacts:
     paths:
       - public
-
 
 sync_to_github:
   stage: sync
