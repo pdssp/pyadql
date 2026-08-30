@@ -1,0 +1,53 @@
+```yaml
+cff-version: 1.2.0
+
+message: "If you use PyADQL in your research, software, or other work, please cite it using the following information."
+
+title: "PyADQL"
+
+abstract: >
+  PyADQL is a Python library that parses Astronomical Data Query Language
+  (ADQL) queries into a typed Python abstract syntax tree (AST).
+  ADQL is the IVOA-standardized query language used to query astronomical
+  catalogs through the Table Access Protocol (TAP).
+
+type: software
+
+authors:
+  - family-names: "Malapert"
+    given-names: "Jean-Christophe"
+    orcid: "https://orcid.org/0000-0002-9717-8192"
+
+version: "0.1.0"
+
+date-released: "2026-07-24"
+
+repository-code: "https://github.com/pdssp/pyadql"
+
+url: "https://github.com/pdssp/pyadql"
+
+license: "Apache-2.0"
+
+keywords:
+  - "ADQL"
+  - "Astronomical Data Query Language"
+  - "astronomy"
+  - "astronomical catalogs"
+  - "Virtual Observatory"
+  - "TAP"
+  - "Table Access Protocol"
+  - "Python"
+  - "abstract syntax tree"
+  - "AST"
+  - "query parser"
+
+references:
+  - type: standard
+    title: "Astronomical Data Query Language Version 2.1"
+    year: 2023
+    url: "https://www.ivoa.net/documents/ADQL/20231215/REC-ADQL-2.1.html"
+
+  - type: software
+    title: "Lark"
+    url: "https://github.com/lark-parser/lark"
+```

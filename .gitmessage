@@ -1,0 +1,40 @@
+# <type>[optional scope][!]: <description>
+#   |<----   Try to keep the summary line under 50 chars   ---->|
+
+# [optional body]
+# Explain WHAT and WHY, not HOW. Wrap lines at ~72 chars.
+
+
+# [optional footer(s)]
+# BREAKING CHANGE: <description>
+# Refs: #<issue>
+
+
+# --- Conventional Commits cheat sheet ---------------------------------------
+# https://www.conventionalcommits.org/en/v1.0.0/
+#
+# type (required) — drives the semantic-release version bump:
+#   feat      new feature                      -> MINOR
+#   fix       bug fix                           -> PATCH
+#   perf      performance improvement           -> PATCH
+#   docs      documentation only                -> no release
+#   style     formatting, no code meaning change-> no release
+#   refactor  code change, no fix/feature        -> no release
+#   test      adding or fixing tests            -> no release
+#   build     build system or dependencies      -> no release
+#   ci        CI configuration                  -> no release
+#   chore     other changes, no src/test impact -> no release
+#
+# scope (optional): the module/component affected, e.g. (auth), (api)
+# !: append after type/scope to signal a BREAKING CHANGE (also add a
+#    "BREAKING CHANGE:" footer explaining the change)
+#
+# Example:
+#
+#   feat(auth): add JWT-based session refresh
+#
+#   Sessions expired silently after 30 minutes, forcing users to
+#   re-login without warning. Add a refresh endpoint that renews
+#   the JWT before expiry using the existing refresh token.
+#
+#   Refs: #142
