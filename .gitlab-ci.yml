@@ -50,6 +50,22 @@ sonarqube:
   needs:
     - py-pytest
 
+# because we need git
+.python-base:
+  before_script:
+    - install_ca_certs "${CUSTOM_CA_CERTS:-$DEFAULT_CA_CERTS}"
+    - configure_netrc
+    # Ignore cached files
+    - mkdir -p .cache && echo "*" >> .cache/.gitignore
+    - enforce_python_cmd
+    - cd ${PYTHON_PROJECT_DIR}
+    - guess_build_system
+    - |
+      if [[ "$PYTHON_BUILD_SYSTEM" =~ ^uv ]]; then
+        trap "cleanup_uv_cache" EXIT
+      fi
+    - maybe_install_packages git build-essential
+
 prepare_version:
   stage: test
   image: ${UL_ARTIFACTORY_HOST}/pdssp-docker/astral-sh/uv:python3.12-bookworm-slim
