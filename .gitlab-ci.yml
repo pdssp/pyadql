@@ -56,7 +56,7 @@ sonarqube:
 
 prepare_version:
   stage: test
-  image: ${UL_ARTIFACTORY_HOST}/pdssp-docker/astral-sh/uv:python{{cookiecutter.python_version[0]}}-bookworm-slim
+  image: ${UL_ARTIFACTORY_HOST}/pdssp-docker/astral-sh/uv:python3.12-bookworm-slim
   retry: 2
   script:
     - PROJECT_VERSION=$(uv version | cut -d' ' -f2)
@@ -67,7 +67,7 @@ prepare_version:
 
 pages:
   stage: publish
-  image: ${UL_ARTIFACTORY_HOST}/pdssp-docker/astral-sh/uv:python{{cookiecutter.python_version[0]}}-bookworm-slim
+  image: ${UL_ARTIFACTORY_HOST}/pdssp-docker/astral-sh/uv:python3.12-bookworm-slim
   retry: 2
   script:
     - apt-get update
