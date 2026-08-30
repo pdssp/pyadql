@@ -78,3 +78,6 @@ exclude = '''
 [tool.isort]
 profile = "black"
 line_length = 88
+
+[tool.bandit]
+exclude_dirs = [".venv", "tests", "scripts"]

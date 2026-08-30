@@ -1,77 +1,20 @@
-# Workflow to avoid duplicate pipelines for branches and merge requests:
-# https://docs.gitlab.com/ee/ci/yaml/workflow.html#switch-between-branch-pipelines-and-merge-request-pipelines
-workflow:
-  rules:
-    # Run pipeline for merge request events
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-
-    # Skip branch pipeline if there is an open merge request
-    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
-      when: never
-
-    # Run pipeline for branch commits
-    - if: $CI_COMMIT_BRANCH
-
-    # Override variables when tags are used (production)
-    - if: $CI_COMMIT_TAG
-      variables:
-        ARTIFACTORY_USER: "${PDSSP_PROD_USERNAME}"
-        ARTIFACTORY_TOKEN: "${PDSSP_PROD_TOKEN}"
-        ARTIFACTORY_REPO: "pdssp-pip-prod-local"
-        ARTIFACTORY_REPO_URL: "https://${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN}@${UL_ARTIFACTORY_HOST}/artifactory/api/pypi/${ARTIFACTORY_REPO}/simple"
-        ARTIFACTORY_DOCKER_REPO: "pdssp-docker-prod-local"
-
-    # Fallback
-    - when: always
-
-# Define global CI/CD variables for the pipeline
-variables:
-  DOCKER_HUB_ACCESSIBLE: "0"
-  CI: "true"
-  # The module name must match the one defined in pyproject.toml
-  PROJECT_SLUG: "pyadql"
-  # JFrog CLI configuration
-  JFROG_CLI_HOME_DIR: ".jfrog"
-  JFROG_CLI_TEMP_DIR: ".jfrog_tmp"
-  JFROG_OS: "jfrog-cli-linux-amd64"
-
-  # Artifactory credentials and repository
-  ARTIFACTORY_USER: "${PDSSP_DEV_USERNAME}"
-  ARTIFACTORY_TOKEN: "${PDSSP_DEV_TOKEN}"
-  ARTIFACTORY_REPO: "pdssp-pip-dev-local"
-  ARTIFACTORY_REPO_URL: "https://${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN}@${UL_ARTIFACTORY_HOST}/artifactory/api/pypi/${ARTIFACTORY_REPO}/simple"
-  ARTIFACTORY_DOCKER_REPO: "pdssp-docker-dev-local"
-  TAG_IMAGE_PODMAN: "publicremotes-docker/ubi9/podman:9.5"
-
-  # JFrog build info
-  JFROG_CLI_BUILD_NAME: "${CI_PROJECT_PATH}_${CI_COMMIT_REF_SLUG}_gitlab-ci"
-  JFROG_CLI_BUILD_NUMBER: "${CI_PIPELINE_ID}"
-
-  # Docker registry
-  CI_TEMPLATE_REGISTRY_HOST: "${UL_ARTIFACTORY_HOST}/publicremotes-docker"
-
-  # Python/pip configuration
-  PIP_INDEX_URL: "https://${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN}@${UL_ARTIFACTORY_HOST}/artifactory/api/pypi/pypi/simple"
-  PIP_CACHE_DIR: "${WORKSPACE}/.pip-cache/"
-
-  # SonarQube
-  SONAR_TOKEN: ${PDSSP_SONAR_TOKEN}
-
-  # Project version (overridden by prepare_version)
-  PROJECT_VERSION: "0.0.0"
-
-  # Docker image variables
-  TARGET_REPO: "${ARTIFACTORY_DOCKER_REPO}"
-  DOCKER_IMAGE_TAG: "${CI_COMMIT_REF_SLUG}"
-  DOCKER_IMAGE_NAME: "${UL_ARTIFACTORY_HOST}/${TARGET_REPO}/${PROJECT_SLUG}"
-  DOCKER_UV_VERSION: "${DOCKER_UV_VERSION}"
-  DOCKER_PYTHON_VERSION: "${DOCKER_PYTHON_VERSION}"
-
-# Include the SonarQube component for code quality analysis
 include:
+
+  - component: $CI_SERVER_FQDN/to-be-continuous/python/gitlab-ci-python@9.6.1
+    inputs:
+      dep-groups: "dev"
+      pytest-enabled: true
+      bandit-enabled: true
+      bandit-args: "-c pyproject.toml --recursive ."
+
+  - component: $CI_SERVER_FQDN/to-be-continuous/semantic-release/gitlab-ci-semrel@4.2.1
+    inputs:
+      changelog-enabled: true
+      auto-release-enabled: true
+
   - component: $CI_SERVER_FQDN/usinelogicielle/public/gitlab-ci-components/sonarqube-component/sonarqube@1.3.0
     inputs:
-      sq_users_admin: jean-christophe.malapert@cnes.fr
+      sq_users_admin: ${PDSSP_SONAR_USERS_ADMIN}
       sq_users_reader: ${TEAM_EMAIL}
       custom_args_sonar_scanner: >
         -Dsonar.gitlab.url=${CI_PROJECT_URL}
@@ -84,96 +27,32 @@ include:
         -Dsonar.qualitygate.wait=true
         -Dsonar.qualitygate.timeout=300
 
+stages:
+  - build
+  - test
+  - package-build
+  - package-test
+  - sonarqube
+  - deploy
+  - acceptance
+  - publish
+
 default:
   tags:
     - Usine_Logicielle_Podman
 
-# ---------------------------------------------------------------------------
-# Templates
-# ---------------------------------------------------------------------------
+variables:
+  PIP_INDEX_URL: "https://${PDSSP_DEV_USERNAME}:${PDSSP_DEV_TOKEN}@${UL_ARTIFACTORY_HOST}/artifactory/api/pypi/pypi/simple"
 
-# Template jfrog seul, compatible avec toute image (pas de pip)
-.jfrog-job:
-  before_script: &jfrog_before_script
-    - curl -sS -u ${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN} -O
-      "https://${UL_ARTIFACTORY_HOST}/artifactory/jfrog-cli-go-remote/v2/2.78.1/jfrog-cli-linux-amd64/jfrog"
-    - chmod 755 jfrog
-    - export UUID=$(cat /proc/sys/kernel/random/uuid)
-    - echo ${UUID} > uuid.txt
-    - ./jfrog config add ${UUID}
-      --url=https://${UL_ARTIFACTORY_HOST}/
-      --access-token=${ARTIFACTORY_TOKEN}
+  SONAR_TOKEN: ${PDSSP_SONAR_TOKEN}
 
-# Template Python complet (jfrog + pip)
-.python-job:
-  image: ${CI_TEMPLATE_REGISTRY_HOST}/${TAG_DOCKER_IMAGE_PYTHON}
-  before_script:
-    - *jfrog_before_script
-    - pip install --upgrade pip
-    - pip install uv
+sonarqube:
+  needs:
+    - py-pytest
 
-# ---------------------------------------------------------------------------
-# Stages
-# ---------------------------------------------------------------------------
-
-stages:
-  - test
-  - sonarqube
-  - doc
-  - package
-  - publish
-  - scan-xray
-  - sync
-
-# ---------------------------------------------------------------------------
-# Jobs
-# ---------------------------------------------------------------------------
-
-# Job to build and publish documentation as GitLab Pages
-pages:
-  stage: doc
-  retry: 2
-  extends: .python-job
-  script:
-    - apt-get update
-    - apt-get install -y curl ca-certificates nodejs npm graphviz
-    - npm config set cafile $CNES_CERTIFICATE
-    - make prepare-dev
-    - source .venv/bin/activate
-    - make install-dev
-    - make doc
-    - mkdir public
-    - mv site/* public
-  artifacts:
-    paths:
-      - public
-
-# Job to run tests and generate coverage reports
-test:
-  stage: test
-  retry: 2
-  extends: .python-job
-  script:
-    - make prepare-dev
-    - source .venv/bin/activate
-    - make install-dev
-    - make coverage
-    - make coverage_xml
-  artifacts:
-    expose_as: coverage report
-    when: always
-    paths:
-      - coverage.xml
-      - report.xml
-    reports:
-      junit: report.xml
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "ci" || $CI_COMMIT_TAG != null
-
-# Job to prepare and set the project version
 prepare_version:
-  extends: .python-job
   stage: test
+  image: ${UL_ARTIFACTORY_HOST}/pdssp-docker/astral-sh/uv:python3.12-bookworm-slim
   retry: 2
   script:
     - PROJECT_VERSION=$(uv version | cut -d' ' -f2)
@@ -182,146 +61,19 @@ prepare_version:
     reports:
       dotenv: version.env
 
-# Job to build the Python package
-package:
-  stage: package
+pages:
+  stage: publish
+  image: ${UL_ARTIFACTORY_HOST}/pdssp-docker/astral-sh/uv:python3.12-bookworm-slim
   retry: 2
-  extends: .python-job
-  needs:
-    - job: prepare_version
-      artifacts: true
   script:
-    - make prepare-dev
-    - source .venv/bin/activate
-    - make release
-  artifacts:
-    untracked: true
-    expire_in: 1 day
-
-# Job to build the Docker image
-docker-image:
-  stage: package
-  retry: 2
-  image:
-    name: ${UL_ARTIFACTORY_HOST}/${TAG_IMAGE_PODMAN}
-    entrypoint: [""]
-  needs:
-    - job: prepare_version
-      artifacts: true
-  script:
-    - podman build --format docker
-      --build-arg BUILD_DATE=${CI_JOB_STARTED_AT}
-      --build-arg VERSION=${DOCKER_IMAGE_TAG}
-      --build-arg ARTIFACTORY_REPO_URL="${ARTIFACTORY_REPO_URL}"
-      --build-arg PIP_INDEX_URL="${PIP_INDEX_URL}"
-      --build-arg PYTHON_VERSION="${DOCKER_PYTHON_VERSION}"
-      --build-arg UV_VERSION="${DOCKER_UV_VERSION}"
-      --file "${CI_PROJECT_DIR}/docker/Dockerfile"
-      --tag "${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
-      --creds="${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN}"
-      --secret id=cnes_cert,src=${CNES_CERTIFICATE}
-      .
-    - podman images
-    - podman save --output ${PROJECT_SLUG}.tar ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+    - apt-get update
+    - apt-get install -y curl ca-certificates nodejs npm graphviz
+    - npm config set cafile "${CNES_CERTIFICATE}"
+    - make install-dev
+    - make doc
+    - mv site public
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
   artifacts:
     paths:
-      - ${PROJECT_SLUG}.tar
-    expire_in: 1 day
-
-# Job to publish the Python package to Artifactory
-publish-artifactory:
-  stage: publish
-  retry: 2
-  extends: .python-job
-  needs:
-    - job: package
-      artifacts: true
-  script:
-    - export UUID=$(cat uuid.txt)
-    - ./jfrog rt u "dist/*" "${ARTIFACTORY_REPO}"
-      --module=${PROJECT_SLUG}
-      --build-name=${PROJECT_SLUG}
-      --build-number=${CI_PIPELINE_IID}
-    - ./jfrog rt bp
-      --server-id=${UUID}
-      ${PROJECT_SLUG} ${CI_PIPELINE_IID}
-      --build-url="${CI_PIPELINE_URL}"
-
-# Job to publish the Docker image to Artifactory
-publish-docker-artifactory:
-  stage: publish
-  retry: 2
-  extends: .jfrog-job
-  image:
-    name: ${UL_ARTIFACTORY_HOST}/${TAG_IMAGE_PODMAN}
-    entrypoint: [""]
-  needs:
-    - job: docker-image
-      artifacts: true
-    - job: prepare_version
-      artifacts: true
-  script:
-    - export UUID=$(cat uuid.txt)
-    - podman load -i ${PROJECT_SLUG}.tar
-    - podman push
-      --digestfile image-file-details
-      --creds="${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN}"
-      "${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
-    - podman tag "${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}" "${DOCKER_IMAGE_NAME}:latest"
-    - podman push
-      --creds="${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN}"
-      "${DOCKER_IMAGE_NAME}:latest"
-    - echo "${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}@$(cat image-file-details)" > image-file-details
-    - cat image-file-details
-    - ./jfrog rt build-docker-create ${TARGET_REPO}
-      --server-id ${UUID}
-      --image-file image-file-details
-      --build-name ${JFROG_CLI_BUILD_NAME}
-      --build-number ${JFROG_CLI_BUILD_NUMBER}
-    - ./jfrog rt bp
-      --server-id ${UUID}
-      --build-url ${CI_PIPELINE_URL}
-      ${JFROG_CLI_BUILD_NAME}
-      ${JFROG_CLI_BUILD_NUMBER}
-  artifacts:
-    paths:
-      - image-file-details
-      - uuid.txt
-    expire_in: 1 day
-
-# Job to scan the Docker image with JFrog Xray
-scan-xray:
-  stage: scan-xray
-  retry: 2
-  extends: .jfrog-job
-  image:
-    name: ${UL_ARTIFACTORY_HOST}/${TAG_IMAGE_PODMAN}
-    entrypoint: [""]
-  needs:
-    - job: publish-docker-artifactory
-      artifacts: true
-  script:
-    - export UUID=$(cat uuid.txt)
-    - chmod 755 jfrog
-    - echo "Build name = ${JFROG_CLI_BUILD_NAME}"
-    - echo "Build number = ${JFROG_CLI_BUILD_NUMBER}"
-    - ./jfrog build-scan
-      --server-id="${UUID}"
-      --fail=false
-      "${JFROG_CLI_BUILD_NAME}"
-      "${JFROG_CLI_BUILD_NUMBER}"
-  allow_failure: true
-
-sync_to_github:
-  stage: sync
-  retry: 2
-  image: ${CI_TEMPLATE_REGISTRY_HOST}/${TAG_DOCKER_IMAGE_PYTHON}
-  script:
-    - git config --global user.email "jean-christophe.malapert@cnes.fr"
-    - git config --global user.name "Jean-Christophe Malapert"
-    - git config --global http.sslCAInfo "${CNES_CERTIFICATE}"
-    - git remote add github https://${GITHUB_TOKEN}@github.com/pdssp/pyadql
-    - git fetch github
-    - git push --force github "HEAD:refs/heads/main"
-  only:
-    - main  # Exécute uniquement pour les modifications sur la branche "main"
+      - public
