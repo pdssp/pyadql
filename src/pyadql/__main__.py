@@ -167,10 +167,7 @@ def run(argv: list[str] | None = None) -> int:
 
     t_start = time.perf_counter()
 
-    try:
-        query = _read_query(args)
-    except SystemExit as e:
-        return e.code or 2
+    query = _read_query(args)
 
     query = query.strip()
     if not query:

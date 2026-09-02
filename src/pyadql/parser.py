@@ -73,6 +73,37 @@ class _Marker:
         self.value = value
 
 
+# Marker kinds handled by select_query(), grouped by how they translate into
+# a Query field: DISTINCT/ALL set "distinct" to a fixed value, the others
+# copy their marker's value onto the same-named field.
+_SELECT_MARKER_CONSTANTS = {"DISTINCT": ("distinct", True), "ALL": ("distinct", False)}
+_SELECT_MARKER_VALUE_FIELDS = {
+    "TOP": "top",
+    "WHERE": "where",
+    "GROUP_BY": "group_by",
+    "HAVING": "having",
+}
+
+
+def _apply_select_marker(fields: dict, item: _Marker) -> None:
+    if item.kind in _SELECT_MARKER_CONSTANTS:
+        field, value = _SELECT_MARKER_CONSTANTS[item.kind]
+        fields[field] = value
+    elif item.kind in _SELECT_MARKER_VALUE_FIELDS:
+        fields[_SELECT_MARKER_VALUE_FIELDS[item.kind]] = item.value
+
+
+def _assign_select_or_from(fields: dict, item) -> None:
+    # `list` items are ambiguous between select_items and from_clause --
+    # from_clause always comes after select_list positionally, so the
+    # first list/Star we see is select_list and any subsequent list is
+    # from_clause.
+    if fields["select_list"] is None:
+        fields["select_list"] = item
+    else:
+        fields["from_clause"] = item
+
+
 def _unwrap_name(tok) -> str:
     """Convert a NAME token into a plain Python identifier, handling
     double-quoted (delimited, case-sensitive) identifiers, including the
@@ -430,45 +461,21 @@ class ADQLTransformer(Transformer):
         return list(c)
 
     def select_query(self, c):
-        distinct = False
-        top = None
-        select_list = None
-        from_clause = []
-        where = None
-        group_by = None
-        having = None
+        fields = {
+            "distinct": False,
+            "top": None,
+            "select_list": None,
+            "from_clause": [],
+            "where": None,
+            "group_by": None,
+            "having": None,
+        }
         for item in c:
             if isinstance(item, _Marker):
-                if item.kind == "DISTINCT":
-                    distinct = True
-                elif item.kind == "ALL":
-                    distinct = False
-                elif item.kind == "TOP":
-                    top = item.value
-                elif item.kind == "WHERE":
-                    where = item.value
-                elif item.kind == "GROUP_BY":
-                    group_by = item.value
-                elif item.kind == "HAVING":
-                    having = item.value
-            elif isinstance(item, A.Star) or isinstance(item, list):
-                # `list` items are ambiguous between select_items and
-                # from_clause -- from_clause always comes after select_list
-                # positionally, so the first list/Star we see is select_list
-                # and any subsequent list is from_clause.
-                if select_list is None:
-                    select_list = item
-                else:
-                    from_clause = item
-        return A.Query(
-            distinct=distinct,
-            top=top,
-            select_list=select_list,
-            from_clause=from_clause,
-            where=where,
-            group_by=group_by,
-            having=having,
-        )
+                _apply_select_marker(fields, item)
+            elif isinstance(item, (A.Star, list)):
+                _assign_select_or_from(fields, item)
+        return A.Query(**fields)
 
     # -- set operations / select_expression -----------------------------------
     def _set_op(self, op_name, c):
