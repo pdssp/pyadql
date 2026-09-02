@@ -4,7 +4,7 @@
 # This file is part of PyADQL <https://gitlab.cnes.fr/pdssp/common/pyadql>
 # SPDX-License-Identifier: Apache-2.0
 
-ARG UV_VERSION="0.11.7-python3.12-trixie"
+ARG UV_VERSION="0.12.9-python3.12-trixie"
 ARG PYTHON_VERSION="3.14.7-slim"
 
 
