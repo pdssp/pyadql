@@ -7,7 +7,7 @@ include:
       bandit-enabled: true
       bandit-args: "-c pyproject.toml --recursive ."
 
-  - component: $CI_SERVER_FQDN/to-be-continuous/semantic-release/gitlab-ci-semrel@4.2.1
+  - component: $CI_SERVER_FQDN/to-be-continuous/semantic-release/gitlab-ci-semrel@4.3.0
     inputs:
       changelog-enabled: true
       auto-release-enabled: true
