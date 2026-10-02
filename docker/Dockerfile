@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 ARG UV_VERSION="0.12.13-python3.12-trixie"
-ARG PYTHON_VERSION="3.14.7-slim"
+ARG PYTHON_VERSION="3.14.8-slim"
 
 
 FROM artifactory.cnes.fr:443/docker-remote/astral/uv:${UV_VERSION} AS base
