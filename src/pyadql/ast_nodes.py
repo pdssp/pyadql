@@ -68,10 +68,6 @@ class Identifier(Node):
     name: str
     is_delimited: bool
     
-    def __str__(self) -> str:
-        """Return the identifier name for display/backward-compatibility."""
-        return self.name
-    
     def __eq__(self, other) -> bool:
         """Compare two Identifier objects.
         
