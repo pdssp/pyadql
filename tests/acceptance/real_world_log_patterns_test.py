@@ -65,7 +65,8 @@ def test_group_by_without_having():
         "WHERE discovered >= 2010 AND discovered <= 2026 "
         "GROUP BY discovered"
     )
-    assert tree.body.group_by == [A.ColumnRef(["discovered"])]
+    assert len(tree.body.group_by) == 1
+    assert tree.body.group_by[0] == A.ColumnRef([A.Identifier("discovered", False)])
     assert tree.body.having is None
 
 
@@ -106,7 +107,10 @@ def test_quoted_table_and_schema_names():
     test_select.py::test_quoted_identifier (on a column) but not yet on a
     qualified table name."""
     tree = parse_adql('SELECT * FROM "apis"."epn_core"')
-    assert tree.body.from_clause[0].name == "apis.epn_core"
+    # name is now list[Identifier] with 2 delimited components
+    assert len(tree.body.from_clause[0].name) == 2
+    assert tree.body.from_clause[0].name[0] == A.Identifier("apis", True)
+    assert tree.body.from_clause[0].name[1] == A.Identifier("epn_core", True)
 
 
 def test_offset_clause_is_valid_adql_2_1():

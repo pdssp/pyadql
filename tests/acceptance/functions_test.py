@@ -32,7 +32,7 @@ def test_trig_functions(parse_query):
     tree = parse_query("SELECT SIN(x), COS(x), ATAN2(y, x) FROM t")
     fns = [item.expr for item in tree.select_list]
     assert [f.name for f in fns] == ["SIN", "COS", "ATAN2"]
-    assert fns[2].args == [A.ColumnRef(["y"]), A.ColumnRef(["x"])]
+    assert fns[2].args == [A.ColumnRef([A.Identifier("y", False)]), A.ColumnRef([A.Identifier("x", False)])]
 
 
 def test_in_unit_function(parse_query):
@@ -41,7 +41,7 @@ def test_in_unit_function(parse_query):
     fn = tree.select_list[0].expr
     assert isinstance(fn, A.FunctionCall)
     assert fn.name == "IN_UNIT"
-    assert fn.args == [A.ColumnRef(["ra"]), A.StringLiteral("deg")]
+    assert fn.args == [A.ColumnRef([A.Identifier("ra", False)]), A.StringLiteral("deg")]
 
 
 def test_string_functions(parse_query):
@@ -60,7 +60,7 @@ def test_cast(parse_query):
     cast = tree.select_list[0].expr
     assert isinstance(cast, A.Cast)
     assert cast.type == A.CastType("DOUBLE PRECISION")
-    assert cast.expr == A.ColumnRef(["ra"])
+    assert cast.expr == A.ColumnRef([A.Identifier("ra", False)])
 
 
 def test_cast_with_parameters(parse_query):
@@ -87,7 +87,7 @@ def test_coalesce(parse_query):
     tree = parse_query("SELECT COALESCE(a, b, c) FROM t")
     expr = tree.select_list[0].expr
     assert isinstance(expr, A.Coalesce)
-    assert expr.args == [A.ColumnRef(["a"]), A.ColumnRef(["b"]), A.ColumnRef(["c"])]
+    assert expr.args == [A.ColumnRef([A.Identifier("a", False)]), A.ColumnRef([A.Identifier("b", False)]), A.ColumnRef([A.Identifier("c", False)])]
 
 
 def test_user_defined_function(parse_query):

@@ -8,20 +8,36 @@
 // full explanation of that constraint).
 // ============================================================================
 
-%import .lexer (NAME, STRING, SIGNED_NUMBER, UNSIGNED_INT)
+%import .lexer (REGULAR_IDENTIFIER, DELIMITED_IDENTIFIER, STRING, SIGNED_NUMBER, UNSIGNED_INT)
+
+// [AnnexA #identifier]: either regular (unquoted, case-insensitive) or
+// delimited (double-quoted, case-sensitive).
+// Use ? prefix to prevent Lark from wrapping the result in a Tree:
+// since this rule is just a choice, return the Token directly.
+?identifier: REGULAR_IDENTIFIER | DELIMITED_IDENTIFIER
+
+// regular_identifier: matches only unquoted identifiers (case-insensitive).
+// Used for function names and other contexts where delimited identifiers
+// are not allowed.
+// Use ? prefix to prevent Lark from wrapping in a Tree.
+?regular_identifier: REGULAR_IDENTIFIER
+
+// delimited_identifier: matches only double-quoted identifiers (case-sensitive).
+// Use ? prefix to prevent Lark from wrapping in a Tree.
+?delimited_identifier: DELIMITED_IDENTIFIER
 
 // [AnnexA #column_reference] ::= [qualifier .] column_name
-column_reference: correlated_name ("." NAME)*
-correlated_name: NAME
+column_reference: correlated_name ("." identifier)*
+correlated_name: identifier
 // [AnnexA #table_name] ::= [schema_name .] identifier
 // (schema_name itself is [catalog_name .] unqualified_schema_name -- we
 // don't model catalog/schema/table as three separate nonterminals, just a
-// generic dotted NAME chain, which accepts the same inputs.)
-table_name: NAME ("." NAME)*
-column_name: NAME
+// generic dotted identifier chain, which accepts the same inputs.)
+table_name: identifier ("." identifier)*
+column_name: identifier
 // [AnnexA #query_name]: the name given to a WITH ... AS (...) common table
 // expression.
-query_name: NAME
+query_name: identifier
 
 // [AnnexA #unsigned_literal] / #general_literal / TRUE/FALSE.
 // NULL is NOT included here: AnnexA 2.1 lists it directly as a

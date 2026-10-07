@@ -6,8 +6,8 @@ def test_point(parse_query):
     p = tree.select_list[0].expr
     assert isinstance(p, A.Point)
     assert p.coordsys == A.StringLiteral("ICRS")
-    assert p.ra == A.ColumnRef(["ra"])
-    assert p.dec == A.ColumnRef(["dec"])
+    assert p.ra == A.ColumnRef([A.Identifier("ra", False)])
+    assert p.dec == A.ColumnRef([A.Identifier("dec", False)])
 
 
 def test_point_without_coordsys():
@@ -17,8 +17,8 @@ def test_point_without_coordsys():
     tree = parse_adql("SELECT POINT(ra, dec) FROM t").body
     p = tree.select_list[0].expr
     assert p.coordsys is None
-    assert p.ra == A.ColumnRef(["ra"])
-    assert p.dec == A.ColumnRef(["dec"])
+    assert p.ra == A.ColumnRef([A.Identifier("ra", False)])
+    assert p.dec == A.ColumnRef([A.Identifier("dec", False)])
 
 
 def test_circle(parse_query):
@@ -38,7 +38,7 @@ def test_circle_center_as_coord_value(parse_query):
     c = tree.select_list[0].expr
     assert isinstance(c, A.Circle)
     assert c.coordsys is None
-    assert c.center == A.ColumnRef(["center_col"])
+    assert c.center == A.ColumnRef([A.Identifier("center_col", False)])
 
 
 def test_box(parse_query):
@@ -52,7 +52,7 @@ def test_box(parse_query):
 def test_box_center_as_coord_value(parse_query):
     tree = parse_query("SELECT BOX(center_col, 1, 1) FROM t")
     b = tree.select_list[0].expr
-    assert b.center == A.ColumnRef(["center_col"])
+    assert b.center == A.ColumnRef([A.Identifier("center_col", False)])
 
 
 def test_polygon(parse_query):
@@ -70,9 +70,9 @@ def test_polygon_vertices_as_coord_values(parse_query):
     poly = tree.select_list[0].expr
     assert len(poly.vertices) == 3
     assert poly.vertices == [
-        A.ColumnRef(["p1"]),
-        A.ColumnRef(["p2"]),
-        A.ColumnRef(["p3"]),
+        A.ColumnRef([A.Identifier("p1", False)]),
+        A.ColumnRef([A.Identifier("p2", False)]),
+        A.ColumnRef([A.Identifier("p3", False)]),
     ]
 
 
@@ -147,5 +147,6 @@ def test_coordsys_must_be_a_string_literal(parse_query):
     tree = parse_query("SELECT POINT(cs_col, ra, dec) FROM t")
     expr = tree.select_list[0].expr
     assert isinstance(expr, A.UserFunctionCall)
+    # User-defined functions preserve original casing from source
     assert expr.name == "POINT"
     assert len(expr.args) == 3

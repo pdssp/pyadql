@@ -6,8 +6,8 @@ def test_simple_select(parse_query):
     assert isinstance(tree, A.Query)
     assert tree.distinct is False
     assert tree.top is None
-    assert [item.expr.parts for item in tree.select_list] == [["ra"], ["dec"]]
-    assert tree.from_clause[0].name == "mytable"
+    assert [item.expr.parts for item in tree.select_list] == [[A.Identifier("ra", False)], [A.Identifier("dec", False)]]
+    assert tree.from_clause[0].name == [A.Identifier("mytable", False)]
 
 
 def test_select_star(parse_query):
@@ -24,20 +24,21 @@ def test_top_and_distinct(parse_query):
 def test_column_alias(parse_query):
     tree = parse_query("SELECT ra AS right_ascension FROM mytable")
     item = tree.select_list[0]
-    assert item.alias == "right_ascension"
+    assert item.alias == A.Identifier("right_ascension", False)
 
 
 def test_table_alias(parse_query):
     tree = parse_query("SELECT t.ra FROM mytable AS t")
     ref = tree.from_clause[0]
     assert isinstance(ref, A.TableRef)
-    assert ref.name == "mytable"
-    assert ref.alias == "t"
+    assert ref.name == [A.Identifier("mytable", False)]
+    assert ref.alias == A.Identifier("t", False)
 
 
 def test_schema_qualified_table(parse_query):
     tree = parse_query("SELECT * FROM gaiadr3.gaia_source")
-    assert tree.from_clause[0].name == "gaiadr3.gaia_source"
+    assert len(tree.from_clause[0].name) == 2
+    assert tree.from_clause[0].name == [A.Identifier("gaiadr3", False), A.Identifier("gaia_source", False)]
 
 
 def test_arithmetic_expression_precedence(parse_query):
@@ -53,7 +54,7 @@ def test_arithmetic_expression_precedence(parse_query):
 
 def test_quoted_identifier(parse_query):
     tree = parse_query('SELECT "My Column" FROM t')
-    assert tree.select_list[0].expr.parts == ["My Column"]
+    assert tree.select_list[0].expr.parts == [A.Identifier("My Column", True)]
 
 
 def test_quoted_identifier_with_escaped_double_quote(parse_query):
@@ -62,7 +63,7 @@ def test_quoted_identifier_with_escaped_double_quote(parse_query):
     quote, exactly like '' does inside a string literal. The spec's own
     example: "Table""X" denotes the single identifier Table"X."""
     tree = parse_query('SELECT "Table""X" FROM t')
-    assert tree.select_list[0].expr.parts == ['Table"X']
+    assert tree.select_list[0].expr.parts == [A.Identifier('Table"X', True)]
 
 
 def test_string_concatenation(parse_query):

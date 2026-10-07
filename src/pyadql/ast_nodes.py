@@ -48,6 +48,66 @@ class Node:
 
 
 # ---------------------------------------------------------------------------
+# Identifier - SQL identifiers (column, table, alias names)
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Identifier(Node):
+    """A SQL identifier (table name, column name, alias).
+    
+    For non-delimited identifiers (case-insensitive in SQL), `name` is
+    normalized to lowercase. For delimited identifiers (case-sensitive),
+    `name` preserves the original casing. The `is_delimited` flag indicates
+    which semantics apply.
+    
+    Example:
+        MYTABLE          -> Identifier(name='mytable', is_delimited=False)
+        "MyTable"        -> Identifier(name='MyTable', is_delimited=True)
+        "Table\"X"       -> Identifier(name='Table"X', is_delimited=True)
+    """
+    
+    name: str
+    is_delimited: bool
+    
+    def __str__(self) -> str:
+        """Return the identifier name for display/backward-compatibility."""
+        return self.name
+    
+    def __eq__(self, other) -> bool:
+        """Compare two Identifier objects.
+        
+        Compares both the name (with appropriate case-sensitivity) and the
+        delimiter status. Two identifiers are equal only if they have the same
+        name and same delimiter status.
+        """
+        if isinstance(other, Identifier):
+            return self.name == other.name and self.is_delimited == other.is_delimited
+        return NotImplemented
+    
+    def __hash__(self) -> int:
+        """Hash based on name and is_delimited for use in sets/dicts."""
+        return hash((self.name, self.is_delimited))
+    
+    @classmethod
+    def from_token(cls, tok) -> Identifier:
+        """Create an Identifier from a Lark NAME token.
+        
+        Handles both regular identifiers (A-Za-z_...) and delimited identifiers
+        ("..."), unescaping doubled quotes ("") inside delimited names.
+        """
+        s = str(tok)
+        is_delimited = s.startswith('"') and s.endswith('"')
+        
+        if is_delimited:
+            # Delimited: strip quotes and unescape doubled quotes
+            name = s[1:-1].replace('""', '"')
+        else:
+            # Non-delimited: normalize to lowercase (case-insensitive in SQL)
+            name = s.lower()
+        
+        return cls(name=name, is_delimited=is_delimited)
+
+
+# ---------------------------------------------------------------------------
 # Top-level query
 # ---------------------------------------------------------------------------
 @dataclass
@@ -78,10 +138,10 @@ class CTE(Node):
     OFFSET internally just like any subquery.
 
     Example -- "WITH recent AS (SELECT id FROM t WHERE d > 2020) ...":
-        CTE(name='recent', query=SelectExpression(body=Query(...)))
+        CTE(name=Identifier('recent'), query=SelectExpression(body=Query(...)))
     """
 
-    name: str
+    name: Identifier
     query: SelectExpression
 
 
@@ -139,11 +199,11 @@ class SelectItem(Node):
     """One entry of the SELECT list: an expression, plus an optional alias.
 
     Example -- "ra AS right_ascension":
-        SelectItem(expr=ColumnRef(['ra']), alias='right_ascension')
+        SelectItem(expr=ColumnRef(['ra']), alias=Identifier('right_ascension'))
     """
 
     expr: Expr
-    alias: str | None = None
+    alias: Identifier | None = None
 
 
 @dataclass
@@ -163,11 +223,11 @@ class SortItem(Node):
 @dataclass
 class TableRef(Node):
     """A plain table reference in FROM, e.g. "gaiadr3.gaia_source AS g".
-    `name` keeps the schema-qualified name as one dotted string (it is not
-    split into separate schema/table fields)."""
+    `name` is a list of Identifiers representing the schema-qualified name
+    (e.g. [Identifier('gaiadr3'), Identifier('gaia_source')])."""
 
-    name: str  # may contain schema.table
-    alias: str | None = None
+    name: list[Identifier]  # schema.table as list of Identifiers
+    alias: Identifier | None = None
     columns: list[str] | None = None  # column renaming (rare)
 
 
@@ -178,7 +238,7 @@ class DerivedTable(Node):
     for instance)."""
 
     subquery: SelectExpression
-    alias: str | None = None
+    alias: Identifier | None = None
     columns: list[str] | None = None
 
 
@@ -319,14 +379,15 @@ class Intersects(Node):
 @dataclass
 class ColumnRef(Node):
     """A column reference, optionally qualified by a table alias:
-    `parts` holds each dot-separated segment in order, e.g. `['t', 'ra']`
-    for `t.ra`, or just `['ra']` for a bare column name. `str(ref)`
-    reconstructs the dotted form."""
+    `parts` holds each dot-separated segment as Identifiers, e.g.
+    [Identifier('t'), Identifier('ra')] for `t.ra`, or just
+    [Identifier('ra')] for a bare column name. `str(ref)` reconstructs
+    the dotted form."""
 
-    parts: list[str]  # e.g. ['t', 'ra'] for t.ra
+    parts: list[Identifier]  # e.g. [Identifier('t'), Identifier('ra')] for t.ra
 
     def __str__(self):
-        return ".".join(self.parts)
+        return ".".join(p.name for p in self.parts)
 
 
 @dataclass

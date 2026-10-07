@@ -3,7 +3,7 @@ from pyadql import ast_nodes as A
 
 def test_comparison(parse_query):
     tree = parse_query("SELECT * FROM t WHERE x = 1")
-    assert tree.where == A.BinaryOp("=", A.ColumnRef(["x"]), A.NumberLiteral(1.0))
+    assert tree.where == A.BinaryOp("=", A.ColumnRef([A.Identifier("x", False)]), A.NumberLiteral(1.0))
 
 
 def test_and_or_not_precedence(parse_query):
@@ -11,7 +11,7 @@ def test_and_or_not_precedence(parse_query):
     # AND binds tighter than OR; NOT binds to b = 2
     where = tree.where
     assert isinstance(where, A.BinaryOp) and where.op == "OR"
-    assert where.left == A.BinaryOp("=", A.ColumnRef(["a"]), A.NumberLiteral(1.0))
+    assert where.left == A.BinaryOp("=", A.ColumnRef([A.Identifier("a", False)]), A.NumberLiteral(1.0))
     right = where.right
     assert isinstance(right, A.BinaryOp) and right.op == "AND"
     assert isinstance(right.left, A.UnaryOp) and right.left.op == "NOT"

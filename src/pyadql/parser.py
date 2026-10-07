@@ -104,17 +104,6 @@ def _assign_select_or_from(fields: dict, item) -> None:
         fields["from_clause"] = item
 
 
-def _unwrap_name(tok) -> str:
-    """Convert a NAME token into a plain Python identifier, handling
-    double-quoted (delimited, case-sensitive) identifiers, including the
-    doubled-double-quote escape for a literal " inside them
-    ([AnnexA #delimited_identifier], #double_quote_symbol)."""
-    s = str(tok)
-    if s.startswith('"') and s.endswith('"'):
-        return s[1:-1].replace('""', '"')
-    return s
-
-
 def _unwrap_string(tok) -> str:
     s = str(tok)
     # strip the surrounding SQL quotes and undo the doubled-quote escape ('')
@@ -154,23 +143,49 @@ class ADQLTransformer(Transformer):
         return A.CastType(str(c[0]).upper())
 
     # -- identifiers ------------------------------------------------------------
+    # Note: identifier, regular_identifier, and delimited_identifier are defined
+    # with the ? prefix in grammar/literals.lark, so Lark returns Tokens directly
+    # without creating Tree wrappers. This means we don't need transformer methods
+    # for them -- they're inlined by Lark's parser.
+    # See grammar/literals.lark for why the ? prefix is used.
+
     def correlated_name(self, c):
-        return _unwrap_name(c[0])
+        # c[0] is a Token (REGULAR_IDENTIFIER or DELIMITED_IDENTIFIER).
+        # The ? prefix in the grammar ensures we get the Token directly,
+        # not wrapped in a Tree.
+        return A.Identifier.from_token(c[0])
 
     def column_name(self, c):
-        return _unwrap_name(c[0])
+        # c[0] is a Token (REGULAR_IDENTIFIER or DELIMITED_IDENTIFIER).
+        # The ? prefix in the grammar ensures we get the Token directly.
+        return A.Identifier.from_token(c[0])
 
     def query_name(self, c):
-        return _unwrap_name(c[0])
+        # c[0] is a Token (REGULAR_IDENTIFIER or DELIMITED_IDENTIFIER).
+        # The ? prefix in the grammar ensures we get the Token directly.
+        return A.Identifier.from_token(c[0])
 
     def table_name(self, c):
-        return ".".join(_unwrap_name(t) for t in c)
+        # c contains Tokens (REGULAR_IDENTIFIER or DELIMITED_IDENTIFIER).
+        # For schema-qualified names: identifier ("." identifier)* 
+        # With the ? prefix on identifier, c will have [Token, Token, ...]
+        identifiers = []
+        for item in c:
+            if isinstance(item, Token):
+                identifiers.append(A.Identifier.from_token(item))
+        return identifiers
 
     def column_reference(self, c):
-        # lark.Token subclasses str: conversion must be forced for every
-        # segment, otherwise "raw" segments (t.<NAME>) stay Token instances
-        # in the repr, even though isinstance(x, str) is already true.
-        parts = [_unwrap_name(p) if isinstance(p, Token) else p for p in c]
+        # Build list of Identifiers.
+        # Grammar: column_reference: correlated_name ("." identifier)*
+        # c[0] is an Identifier (from correlated_name)
+        # c[1:] are Tokens (from identifier results with ? prefix)
+        parts = []
+        for item in c:
+            if isinstance(item, A.Identifier):
+                parts.append(item)
+            elif isinstance(item, Token):
+                parts.append(A.Identifier.from_token(item))
         return A.ColumnRef(parts)
 
     def column_name_list(self, c):
@@ -289,7 +304,9 @@ class ADQLTransformer(Transformer):
         return A.FunctionCall(name, args, False)
 
     def udf(self, c):
-        name = c[0]
+        # c[0] is a Token (REGULAR_IDENTIFIER) from regular_identifier with ? prefix.
+        # Keep original casing from source (e.g., "POINT", "point", "Point").
+        name = str(c[0])
         args = list(c[1]) if len(c) > 1 else []
         return A.UserFunctionCall(name, args)
 
@@ -319,7 +336,9 @@ class ADQLTransformer(Transformer):
         return c[0]
 
     def udf_as_point(self, c):
-        name = c[0]
+        # c[0] is a Token (REGULAR_IDENTIFIER) from regular_identifier with ? prefix.
+        # Keep original casing from source (e.g., "POINT", "point", "Point").
+        name = str(c[0])
         args = list(c[1]) if len(c) > 1 else []
         return A.UserFunctionCall(name, args)
 
@@ -416,6 +435,7 @@ class ADQLTransformer(Transformer):
         return A.Star()  # qualified star (t.*) simplified to a generic Star
 
     def alias(self, c):
+        # c[0] is an Identifier from column_name
         return _Marker("ALIAS", c[0])
 
     def derived_column(self, c):
@@ -545,6 +565,7 @@ class ADQLTransformer(Transformer):
         return c[0]
 
     def correlation_specification(self, c):
+        # c[0] is an Identifier from correlated_name
         alias = c[0]
         cols = c[1] if len(c) > 1 else None
         return (alias, cols)

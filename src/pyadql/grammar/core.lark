@@ -62,8 +62,8 @@
 // somewhere (SECTION 3), not how it's built.
 // ============================================================================
 
-%import .lexer (NAME, STRING, SIGNED_NUMBER, UNSIGNED_INT, NOT_KW, LIKE_KW, ILIKE_KW, ALL_KW)
-%import .literals (column_reference, correlated_name, table_name, column_name, query_name, literal, number_literal, string_literal, true_literal, false_literal, cast_target, character_string_type, numeric_type, datetime_type, geometry_type, string_cast_type, numeric_cast_type, datetime_cast_type, geometry_cast_type)
+%import .lexer (STRING, SIGNED_NUMBER, UNSIGNED_INT, NOT_KW, LIKE_KW, ILIKE_KW, ALL_KW)
+%import .literals (column_reference, correlated_name, table_name, column_name, query_name, regular_identifier, literal, number_literal, string_literal, true_literal, false_literal, cast_target, character_string_type, numeric_type, datetime_type, geometry_type, string_cast_type, numeric_cast_type, datetime_cast_type, geometry_cast_type)
 
 // ############################################################################
 // # SECTION 1 / 5 -- QUERY STRUCTURE
@@ -327,7 +327,8 @@ STR_FUNC_NAME: "LOWER"i | "UPPER"i
 // priority than the named-function rules above so that reserved ADQL
 // function names (CONTAINS, POINT, COUNT, ...) are matched as themselves
 // rather than swallowed here as a generic call.
-user_defined_function.-1: correlated_name "(" arg_list? ")" -> udf
+// Note: UDF names must be regular (unquoted) identifiers, not delimited.
+user_defined_function.-1: regular_identifier "(" arg_list? ")" -> udf
 
 arg_list: value_expression ("," value_expression)*
 
@@ -412,7 +413,8 @@ coord_value: point_value | column_reference
 ?point_value: point_expr | centroid_expr | udf_as_point
 // UDF call reachable from point_value without re-triggering the
 // user_defined_function.-1 priority dance (arg_list already defined above).
-udf_as_point: correlated_name "(" arg_list? ")"
+// UDF names must be regular (unquoted) identifiers, not delimited.
+udf_as_point: regular_identifier "(" arg_list? ")"
 // [AnnexA #coordinate1] / #coordinate2 / #coordinates]: a raw ra, dec pair.
 coordinates: numeric_value_expression "," numeric_value_expression
 radius: numeric_value_expression

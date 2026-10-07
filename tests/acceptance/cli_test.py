@@ -12,7 +12,8 @@ def test_cli_basic_query_success(capsys):
     captured = capsys.readouterr()
     assert code == 0
     assert "SelectExpression(" in captured.out
-    assert "ColumnRef(parts=['ra'])" in captured.out
+    # .parts is now list[Identifier], check for the Identifier representation
+    assert "ColumnRef(parts=[Identifier(name='ra'" in captured.out
 
 
 def test_cli_json_output(capsys):
@@ -23,7 +24,12 @@ def test_cli_json_output(capsys):
     assert data["_type"] == "SelectExpression"
     assert data["body"]["_type"] == "Query"
     assert data["body"]["select_list"][0]["expr"]["_type"] == "ColumnRef"
-    assert data["body"]["select_list"][0]["expr"]["parts"] == ["ra"]
+    # .parts is now list[Identifier], which become dicts in JSON
+    parts = data["body"]["select_list"][0]["expr"]["parts"]
+    assert len(parts) == 1
+    assert parts[0]["_type"] == "Identifier"
+    assert parts[0]["name"] == "ra"
+    assert parts[0]["is_delimited"] is False
 
 
 def test_cli_tree_output(capsys):

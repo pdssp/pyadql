@@ -14,11 +14,14 @@ def test_realistic_gaia_query(parse):
     tree = parse(query)
 
     assert tree.body.top == 100
-    assert tree.body.from_clause[0].name == "gaiadr3.gaia_source"
-    assert tree.body.from_clause[0].alias == "g"
+    
+    assert len(tree.body.from_clause[0].name) == 2
+    assert tree.body.from_clause[0].name[0] == A.Identifier("gaiadr3", False)
+    assert tree.body.from_clause[0].name[1] == A.Identifier("gaia_source", False)
+    assert tree.body.from_clause[0].alias == A.Identifier("g", False)
 
     dist_item = tree.body.select_list[3]
-    assert dist_item.alias == "dist"
+    assert dist_item.alias == A.Identifier("dist", False)
     assert isinstance(dist_item.expr, A.Distance)
     assert dist_item.expr.numeric_form is False
 
@@ -27,12 +30,15 @@ def test_realistic_gaia_query(parse):
     assert isinstance(where.left, A.BinaryOp) and isinstance(
         where.left.left, A.Contains
     )
-    assert where.right == A.BinaryOp(
-        "<", A.ColumnRef(["g", "phot_g_mean_mag"]), A.NumberLiteral(18.0)
-    )
+    
+    right_expr = where.right
+    assert isinstance(right_expr, A.BinaryOp) 
+    assert right_expr.op == "<"
+    assert right_expr.left == A.ColumnRef([A.Identifier("g", False), A.Identifier("phot_g_mean_mag", False)]) 
+    assert right_expr.right == A.NumberLiteral(18.0)
 
     # ORDER BY belongs to the outer SelectExpression, not the inner Query.
-    assert tree.order_by[0].expr == A.ColumnRef(["dist"])
+    assert tree.order_by[0].expr == A.ColumnRef([A.Identifier("dist", False)])
     assert tree.order_by[0].direction == "ASC"
 
 
@@ -52,7 +58,7 @@ def test_query_with_join_geometry_and_grouping():
     join = tree.body.from_clause[0]
     assert isinstance(join, A.Join)
     assert join.join_type == "INNER"
-    assert tree.body.group_by == [A.ColumnRef(["c", "cluster_name"])]
+    assert tree.body.group_by == [A.ColumnRef([A.Identifier("c", False), A.Identifier("cluster_name", False)])]
     assert tree.body.having.op == ">"
     assert tree.order_by[0].direction == "DESC"
 
@@ -72,7 +78,7 @@ def test_cte_feeding_a_geometry_crossmatch():
         ON DISTANCE(b.ra, b.dec, x.ra, x.dec) < 0.01
     """
     tree = parse_adql(query)
-    assert tree.with_clause[0].name == "bright"
+    assert tree.with_clause[0].name == A.Identifier("bright", False)
     assert tree.with_clause[0].query.body.where.op == "<"
 
     join = tree.body.from_clause[0]

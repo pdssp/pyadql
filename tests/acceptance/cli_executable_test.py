@@ -47,7 +47,7 @@ def test_executable_basic_query(tmp_path):
     )
     assert result.returncode == 0
     assert "SelectExpression(" in result.stdout
-    assert "ColumnRef(parts=['ra'])" in result.stdout
+    assert "ColumnRef(parts=[Identifier(name='ra'" in result.stdout
     assert result.stderr == ""  # default WARNING level: silent
 
 

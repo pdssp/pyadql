@@ -16,14 +16,13 @@
 //   BNF quoted keyword  -> Lark `"KEYWORD"i` (case-insensitive literal)
 // ============================================================================
 
-// [AnnexA #identifier] / #regular_identifier / #delimited_identifier: a
-// delimited (double-quoted) identifier is folded into the same NAME
-// terminal rather than handled as a separate token, and unquoted in the
-// transformer. A doubled double-quote ("") inside a delimited identifier
-// escapes a literal double-quote character ([AnnexA #double_quote_symbol]),
-// exactly like '' does inside a string literal (STRING, below); e.g.
-// "Table""X" denotes the single identifier Table"X.
-NAME: /[A-Za-z_][A-Za-z0-9_]*/ | /"([^"]|"")*"/
+// [AnnexA #identifier] / #regular_identifier / #delimited_identifier
+// REGULAR_IDENTIFIER: unquoted, case-insensitive in SQL
+// DELIMITED_IDENTIFIER: double-quoted, case-sensitive; doubled quotes ("") escape
+// a literal quote ([AnnexA #double_quote_symbol]), exactly like '' in strings.
+// Example: "Table""X" denotes the identifier Table"X.
+REGULAR_IDENTIFIER: /[A-Za-z_][A-Za-z0-9_]*/
+DELIMITED_IDENTIFIER: /"([^"]|"")*"/
 
 // Named (not anonymous) keyword terminals: Lark discards unnamed string
 // literals from the parse tree by default, so anything a transformer needs
