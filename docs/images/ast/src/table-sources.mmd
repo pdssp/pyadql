@@ -5,10 +5,10 @@ classDiagram
     DerivedTable *-- SelectExpression : subquery
 
     class TableRef {
-        +name: str
-        +alias: str
+        +name: Identifier[]
+        +alias: Identifier | None
     }
-    class DerivedTable { +alias: str }
+    class DerivedTable { +alias: Identifier }
     class Join {
         +join_type: "INNER"|"LEFT"|"RIGHT"|"FULL"
         +natural: bool

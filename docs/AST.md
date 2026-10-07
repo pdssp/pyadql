@@ -39,7 +39,50 @@ recurring idea: an **`Expr`** (a big `Union` of ~30 classes -- `BinaryOp`,
 ADQL value expression". Predicates, function arguments, `SELECT` items,
 `WHERE`/`HAVING` conditions -- all of them are built out of `Expr`.
 
-## 2. Simplified diagrams, grouped by category
+## 2. Identifiers (names in the query)
+
+Any name in an ADQL query (a column name, table name, alias, etc.) is
+represented as an `Identifier` object, not a plain string. This preserves
+two ADQL semantics:
+
+```python
+class Identifier:
+    name: str           # The actual name, after normalization/unescaping
+    is_delimited: bool  # True if it was quoted in the source ("My Column"),
+                        # False if unquoted (my_column)
+```
+
+**Casing rules (SQL standard):**
+- **Regular (unquoted) identifiers**: `my_column` → stored as `"my_column"` (lowercase).
+  In ADQL queries, case does not matter: `My_Column`, `MY_COLUMN`, and `my_column`
+  all refer to the same column. They are all normalized to lowercase.
+- **Delimited (double-quoted) identifiers**: `"My Column"` → stored as `"My Column"`
+  (exact casing preserved). Case-sensitive: `"col"` and `"Col"` are different names.
+  Escaped quotes (doubled `""`) are unescaped: `"Table""X"` → stored as `Table"X`.
+
+**Examples:**
+```python
+# Regular identifier
+Identifier(name="ra", is_delimited=False)      # from: SELECT ra FROM ...
+
+# Delimited identifier
+Identifier(name="My Column", is_delimited=True)  # from: SELECT "My Column" FROM ...
+```
+
+**Comparison:**
+Identifier objects use type-strict comparison: an `Identifier` is equal only to
+another `Identifier` with the same `name` and `is_delimited` flag. Comparing
+an `Identifier` to a string is not supported.
+
+```python
+# Correct
+if col.name == Identifier("ra", False): ...
+
+# WRONG: Identifier does not equal string
+if col.name == "ra": ...
+```
+
+## 3. Simplified diagrams, grouped by category
 
 These diagrams are deliberately incomplete (only the fields that matter for
 orientation, not every one) -- they show *shape*, not a full spec. `Expr`
@@ -75,7 +118,7 @@ value-expression node types", to avoid a diagram with 30 boxes.
 column, `POINT(...)`, `CENTROID(...)`, a UDF) -- an ADQL 2.1 addition.
 Check `isinstance(center, Coordinates)` to tell the two forms apart.
 
-## 3. Worked example
+## 4. Worked example
 
 ```sql
 SELECT TOP 100 g.source_id, g.ra, g.dec,
@@ -93,40 +136,107 @@ SelectExpression(
         distinct=False,
         top=100,                                    # TOP 100
         select_list=[
-            SelectItem(expr=ColumnRef(['g', 'source_id'])),
-            SelectItem(expr=ColumnRef(['g', 'ra'])),
-            SelectItem(expr=ColumnRef(['g', 'dec'])),
+            # g.source_id
             SelectItem(
-                expr=Distance(                       # DISTANCE(...) AS dist
-                    args=[
-                        Point(coordsys=StringLiteral('ICRS'),
-                              ra=ColumnRef(['g', 'ra']), dec=ColumnRef(['g', 'dec'])),
-                        Point(coordsys=StringLiteral('ICRS'),
-                              ra=NumberLiteral(56.75), dec=NumberLiteral(24.12)),
-                    ],
-                    numeric_form=False,               # the two-Point overload, not the 4-number one
+                expr=ColumnRef(
+                    parts=[
+                        Identifier(name='g', is_delimited=False),
+                        Identifier(name='source_id', is_delimited=False),
+                    ]
                 ),
-                alias='dist',
+                alias=None,
+            ),
+            # g.ra
+            SelectItem(
+                expr=ColumnRef(
+                    parts=[
+                        Identifier(name='g', is_delimited=False),
+                        Identifier(name='ra', is_delimited=False),
+                    ]
+                ),
+                alias=None,
+            ),
+            # g.dec
+            SelectItem(
+                expr=ColumnRef(
+                    parts=[
+                        Identifier(name='g', is_delimited=False),
+                        Identifier(name='dec', is_delimited=False),
+                    ]
+                ),
+                alias=None,
+            ),
+            # DISTANCE(...) AS dist
+            SelectItem(
+                expr=Distance(
+                    args=[
+                        Point(
+                            coordsys=StringLiteral('ICRS'),
+                            ra=ColumnRef(parts=[
+                                Identifier(name='g', is_delimited=False),
+                                Identifier(name='ra', is_delimited=False),
+                            ]),
+                            dec=ColumnRef(parts=[
+                                Identifier(name='g', is_delimited=False),
+                                Identifier(name='dec', is_delimited=False),
+                            ]),
+                        ),
+                        Point(
+                            coordsys=StringLiteral('ICRS'),
+                            ra=NumberLiteral(56.75),
+                            dec=NumberLiteral(24.12),
+                        ),
+                    ],
+                    numeric_form=False,              # the two-Point overload, not the 4-number one
+                ),
+                alias=Identifier(name='dist', is_delimited=False),
             ),
         ],
         from_clause=[
-            TableRef(name='gaiadr3.gaia_source', alias='g'),
+            # gaiadr3.gaia_source AS g
+            TableRef(
+                name=[
+                    Identifier(name='gaiadr3', is_delimited=False),
+                    Identifier(name='gaia_source', is_delimited=False),
+                ],
+                alias=Identifier(name='g', is_delimited=False),
+            ),
         ],
         where=BinaryOp(                              # "... = 1" wraps CONTAINS(...)
             op='=',
             left=Contains(
-                geom1=Point(coordsys=StringLiteral('ICRS'),
-                            ra=ColumnRef(['g', 'ra']), dec=ColumnRef(['g', 'dec'])),
-                geom2=Circle(coordsys=StringLiteral('ICRS'),
-                             center=Coordinates(ra=NumberLiteral(56.75), dec=NumberLiteral(24.12)),
-                             radius=NumberLiteral(0.5)),
+                geom1=Point(
+                    coordsys=StringLiteral('ICRS'),
+                    ra=ColumnRef(parts=[
+                        Identifier(name='g', is_delimited=False),
+                        Identifier(name='ra', is_delimited=False),
+                    ]),
+                    dec=ColumnRef(parts=[
+                        Identifier(name='g', is_delimited=False),
+                        Identifier(name='dec', is_delimited=False),
+                    ]),
+                ),
+                geom2=Circle(
+                    coordsys=StringLiteral('ICRS'),
+                    center=Coordinates(
+                        ra=NumberLiteral(56.75),
+                        dec=NumberLiteral(24.12),
+                    ),
+                    radius=NumberLiteral(0.5),
+                ),
             ),
             right=NumberLiteral(1.0),
         ),
         group_by=None,
         having=None,
     ),
-    order_by=[SortItem(expr=ColumnRef(['dist']), direction='ASC')],  # lives on SelectExpression, not Query
+    # ORDER BY dist ASC
+    order_by=[
+        SortItem(
+            expr=ColumnRef(parts=[Identifier(name='dist', is_delimited=False)]),
+            direction='ASC',
+        )
+    ],
     offset=None,
     with_clause=None,
 )
@@ -134,7 +244,7 @@ SelectExpression(
 
 A few things worth noticing here, because they trip people up the first time:
 
-- `dist` in `ORDER BY dist` is just a `ColumnRef(['dist'])` -- pyadql does
+- `dist` in `ORDER BY dist` is just a `ColumnRef(parts=[Identifier(name='dist', is_delimited=False)])` -- pyadql does
   not resolve it back to the `Distance(...)` expression it's aliased from;
   that kind of alias resolution is up to your own code if you need it.
 - `CONTAINS(...) = 1` is an ordinary `BinaryOp('=', ...)` wrapping a
@@ -144,19 +254,20 @@ A few things worth noticing here, because they trip people up the first time:
 - `ORDER BY` sits on the outer `SelectExpression`, not inside `Query` --
   see section 1.
 
-## 4. Node reference table
+## 5. Node reference table
 
 | Node | ADQL construct | Key fields | Notes |
 |---|---|---|---|
+| `Identifier` | any name in the query | `name`, `is_delimited` | regular (lowercase) or delimited (quoted); see section 2 |
 | `SelectExpression` | the whole query (root) | `body`, `order_by`, `offset`, `with_clause` | returned by `parse_adql()`; also wraps every subquery |
-| `CTE` | one `WITH name AS (...)` entry | `name`, `query` | ADQL 2.1 |
+| `CTE` | one `WITH name AS (...)` entry | `name`, `query` | `name` is an `Identifier`; ADQL 2.1 |
 | `Query` | one `SELECT ... FROM ...` | `distinct`, `top`, `select_list`, `from_clause`, `where`, `group_by`, `having` | no `order_by`/`offset` here |
 | `SetOperation` | `UNION`/`EXCEPT`/`INTERSECT` | `op`, `distinct`, `left`, `right` | |
 | `Star` | `SELECT *` | -- | |
-| `SelectItem` | one SELECT-list entry | `expr`, `alias` | |
+| `SelectItem` | one SELECT-list entry | `expr`, `alias` | `alias` is an `Identifier` or `None` |
 | `SortItem` | one ORDER BY entry | `expr`, `direction` | |
-| `TableRef` | a plain table in FROM | `name`, `alias`, `columns` | |
-| `DerivedTable` | `(SELECT ...) AS alias` in FROM | `subquery`, `alias` | |
+| `TableRef` | a plain table in FROM | `name`, `alias`, `columns` | `name` is a list of `Identifier` (for schema-qualified names); `alias` is an `Identifier` or `None` |
+| `DerivedTable` | `(SELECT ...) AS alias` in FROM | `subquery`, `alias` | `alias` is an `Identifier` |
 | `Join` | one JOIN | `left`, `right`, `join_type`, `natural`, `on`, `using` | left-leaning tree for chained joins |
 | `BinaryOp` | AND/OR/arithmetic/concat/comparisons | `op`, `left`, `right` | one class, many operators |
 | `UnaryOp` | `NOT x` / unary `-x`/`+x` | `op`, `operand` | |
@@ -167,13 +278,13 @@ A few things worth noticing here, because they trip people up the first time:
 | `Exists` | `EXISTS (...)` | `subquery` | |
 | `Contains` | `CONTAINS(...)` | `geom1`, `geom2` | numeric predicate, usually wrapped in `= 1` |
 | `Intersects` | `INTERSECTS(...)` | `geom1`, `geom2` | ditto |
-| `ColumnRef` | a column, e.g. `t.ra` | `parts` | |
+| `ColumnRef` | a column, e.g. `t.ra` | `parts` | `parts` is a list of `Identifier` (for schema/table.column) |
 | `NumberLiteral` / `StringLiteral` / `NullLiteral` / `BoolLiteral` | literals | `value` | |
-| `FunctionCall` | a recognized ADQL function call | `name`, `args`, `distinct` | aggregates, numeric/trig, LOWER/UPPER |
+| `FunctionCall` | a recognized ADQL function call | `name`, `args`, `distinct` | aggregates, numeric/trig, LOWER/UPPER; `name` is a str |
 | `CountStar` | `COUNT(*)` | -- | |
 | `Cast` / `CastType` | `CAST(x AS type)` | `expr`, `type` / `name`, `params` | ADQL 2.1 |
 | `Coalesce` | `COALESCE(...)` | `args` | ADQL 2.1 |
-| `UserFunctionCall` | any unrecognized `name(...)` | `name`, `args` | TAP-service UDFs |
+| `UserFunctionCall` | any unrecognized `name(...)` | `name`, `args` | `name` is a str (preserves original casing from source) |
 | `ScalarSubquery` | `(SELECT ...)` used as a value | `subquery` | |
 | `Point` / `Circle` / `Box` / `Polygon` | geometry constructors | `coordsys`, ... | `coordsys` optional (ADQL 2.1) |
 | `Coordinates` | a raw `ra, dec` pair | `ra`, `dec` | one form of a center/vertex |
@@ -181,7 +292,7 @@ A few things worth noticing here, because they trip people up the first time:
 | `Centroid` / `Area` / `Coord1` / `Coord2` / `Coordsys` | geometry accessors | `geom` | |
 | `Distance` | `DISTANCE(...)` | `args`, `numeric_form` | two overloads, see docstring |
 
-## 5. Walking the tree
+## 6. Walking the tree
 
 There's no built-in visitor class (the AST is intentionally just plain
 dataclasses, no behavior), but a generic walker is a few lines since every
@@ -205,8 +316,11 @@ def walk(node, callback):
 # Example: collect every column referenced anywhere in the query.
 tree = parse_adql("SELECT ra FROM t WHERE dec > 0 AND CONTAINS(POINT('ICRS', ra, dec), c.footprint) = 1")
 columns = []
-walk(tree, lambda n: columns.append(str(n)) if isinstance(n, A.ColumnRef) else None)
-print(columns)  # ['ra', 'dec', 'ra', 'dec', 'c.footprint']
+walk(tree, lambda n: columns.append(n) if isinstance(n, A.ColumnRef) else None)
+# Each ColumnRef has .parts as a list of Identifier objects
+for col_ref in columns:
+    print('.'.join(ident.name for ident in col_ref.parts))
+# Output: 'ra', 'dec', 'ra', 'dec', 'c.footprint'
 ```
 
 Swap the `isinstance` check in the callback for whatever you're looking for

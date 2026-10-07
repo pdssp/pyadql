@@ -31,6 +31,6 @@ classDiagram
         +op: "UNION"|"EXCEPT"|"INTERSECT"
         +distinct: bool
     }
-    class CTE { +name: str }
-    class SelectItem { +alias: str }
+    class CTE { +name: Identifier }
+    class SelectItem { +alias: Identifier | None }
     class SortItem { +direction: "ASC"|"DESC" }

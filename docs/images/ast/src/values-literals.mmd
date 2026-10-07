@@ -1,5 +1,11 @@
 classDiagram
-    class ColumnRef { +parts: str[] }
+    ColumnRef *-- Identifier : parts
+
+    class Identifier {
+        +name: str
+        +is_delimited: bool
+    }
+    class ColumnRef { +parts: Identifier[] }
     class NumberLiteral { +value: float }
     class StringLiteral { +value: str }
     class NullLiteral
