@@ -86,7 +86,7 @@ class Identifier(Node):
         """Hash based on name and is_delimited for use in sets/dicts."""
         return hash((self.name, self.is_delimited))
     
-    def matches(self, other: Union[str, Identifier]) -> bool:
+    def matches(self, other: Identifier | str) -> bool:
         """Check if this identifier matches another using SQL semantics.
         
         For string comparisons: respects the delimiter status of this identifier.
