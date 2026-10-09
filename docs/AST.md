@@ -41,8 +41,9 @@ ADQL value expression". Predicates, function arguments, `SELECT` items,
 
 ## 2. Identifiers (names in the query)
 
-Any name in an ADQL query (a column name, table name, alias, etc.) is
-represented as an `Identifier` object, not a plain string. This preserves
+Any name in an ADQL query (a column name, table name, alias, etc. ),
+except function calls, is represented as an `Identifier` object, 
+not a plain string. This preserves
 two ADQL semantics:
 
 ```python

@@ -59,6 +59,9 @@ class Identifier(Node):
     `name` preserves the original casing. The `is_delimited` flag indicates
     which semantics apply.
     
+    Note: Do not instantiate directly via __init__. Use from_string() or
+    from_token() to ensure proper normalization based on delimiter status.
+    
     Example:
         MYTABLE          -> Identifier(name='mytable', is_delimited=False)
         "MyTable"        -> Identifier(name='MyTable', is_delimited=True)
@@ -83,24 +86,74 @@ class Identifier(Node):
         """Hash based on name and is_delimited for use in sets/dicts."""
         return hash((self.name, self.is_delimited))
     
+    def matches(self, other: Union[str, Identifier]) -> bool:
+        """Check if this identifier matches another using SQL semantics.
+        
+        For string comparisons: respects the delimiter status of this identifier.
+        - If delimited (case-sensitive): string is compared case-sensitively
+        - If undelimited (case-insensitive): string is compared case-insensitively
+        
+        For Identifier comparisons: if either is undelimited, the comparison
+        is case-insensitive. Otherwise, it's case-sensitive.
+        
+        Examples:
+            id1 = Identifier.from_string("ra")
+            id1.matches("RA")                                # True (undelimited: case-insensitive)
+            
+            id2 = Identifier.from_string('"MyCol"')
+            id2.matches("mycol")                             # False (delimited: case-sensitive)
+            id2.matches("MyCol")                             # True
+            
+            id1.matches(Identifier.from_string('"RA"'))      # True (one undelimited)
+            id2.matches(Identifier.from_string('"mycol"'))   # False (both delimited)
+        """
+        if isinstance(other, str):
+            if self.is_delimited:
+                return self.name == other
+            else:
+                return self.name.lower() == other.lower()
+        elif isinstance(other, Identifier):
+            if not self.is_delimited or not other.is_delimited:
+                return self.name.lower() == other.name.lower()
+            return self.name == other.name
+        return NotImplemented
+    
+    @classmethod
+    def from_string(cls, adql_identifier: str) -> Identifier:
+        """Create an Identifier from a ADQL identifier string.
+        
+        Handles both quoted and unquoted forms:
+        - Unquoted (e.g., "MyTable") → normalized to lowercase (case-insensitive)
+        - Quoted (e.g., '"MyTable"') → preserves casing (case-sensitive)
+        
+        Quoted identifiers can contain escaped double quotes ("") which are
+        unescaped to a single quote (").
+        
+        Examples:
+            Identifier.from_string("MyTable")      # → Identifier("mytable", False)
+            Identifier.from_string("RA")           # → Identifier("ra", False)
+            Identifier.from_string('"MyTable"')    # → Identifier("MyTable", True)
+            Identifier.from_string('"Table""X"')   # → Identifier('Table"X', True)
+        """
+        is_delimited = adql_identifier.startswith('"') and adql_identifier.endswith('"')
+        
+        if is_delimited:
+            # Delimited: strip quotes and unescape doubled quotes
+            name = adql_identifier[1:-1].replace('""', '"')
+        else:
+            # Unquoted: normalize to lowercase (case-insensitive in SQL)
+            name = adql_identifier.lower()
+        
+        return cls(name=name, is_delimited=is_delimited)
+    
     @classmethod
     def from_token(cls, tok) -> Identifier:
         """Create an Identifier from a Lark NAME token.
         
-        Handles both regular identifiers (A-Za-z_...) and delimited identifiers
-        ("..."), unescaping doubled quotes ("") inside delimited names.
+        Converts the Lark token to a string and delegates to from_string()
+        for normalization.
         """
-        s = str(tok)
-        is_delimited = s.startswith('"') and s.endswith('"')
-        
-        if is_delimited:
-            # Delimited: strip quotes and unescape doubled quotes
-            name = s[1:-1].replace('""', '"')
-        else:
-            # Non-delimited: normalize to lowercase (case-insensitive in SQL)
-            name = s.lower()
-        
-        return cls(name=name, is_delimited=is_delimited)
+        return cls.from_string(str(tok))
 
 
 # ---------------------------------------------------------------------------
