@@ -154,6 +154,38 @@ class Identifier(Node):
         for normalization.
         """
         return cls.from_string(str(tok))
+    
+    def __str__(self) -> str:
+        """Return the string representation of the identifier, with quoting when necessary.
+        
+        - If delimited (case-sensitive): wraps in double quotes and escapes internal quotes
+        - If undelimited (case-insensitive): returns the name as-is
+        """
+        result = None
+        if self.is_delimited:
+            # Escape internal quotes by doubling them, then wrap in quotes
+            escaped_name = self.name.replace('"', '""')
+            result = f'"{escaped_name}"'
+        else:
+            # Undelimited identifier: return the name as-is
+            result = self.name
+        return result
+    
+    @staticmethod
+    def join_qualified_name(identifiers: list[Identifier]) -> str:
+        """Join a list of Identifiers into a fully qualified name using their string representations.
+        
+        Each Identifier is converted to its string form (handling quotes/escaping as needed),
+        then joined with dots to create a schema-qualified name. This is useful for reconstructing
+        table or column references from a list of identifier components.
+        
+        Args:
+            identifiers: A list of Identifier objects to join (e.g., [schema, table])
+        
+        Returns:
+            A string representation of the qualified name.
+        """
+        return ".".join(str(ident) for ident in identifiers)
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +310,27 @@ class TableRef(Node):
     name: list[Identifier]  # schema.table as list of Identifiers
     alias: Identifier | None = None
     columns: list[str] | None = None  # column renaming (rare)
+    
+    def __str__(self) -> str:
+        """Return the string representation of the table reference in ADQL format.
+        
+        Format: name [AS alias] [(col1, col2, ...)]
+        """
+        # Join schema-qualified name using Identifier utility
+        table_name = Identifier.join_qualified_name(self.name)
+        
+        result = table_name
+        
+        # Add AS alias if present
+        if self.alias is not None:
+            result += f" AS {self.alias}"
+        
+        # Add column list if present (rare case)
+        if self.columns is not None:
+            cols = ", ".join(self.columns)
+            result += f" ({cols})"
+        
+        return result
 
 
 @dataclass
@@ -436,7 +489,7 @@ class ColumnRef(Node):
     parts: list[Identifier]  # e.g. [Identifier('t'), Identifier('ra')] for t.ra
 
     def __str__(self):
-        return ".".join(p.name for p in self.parts)
+        return Identifier.join_qualified_name(self.parts)
 
 
 @dataclass
