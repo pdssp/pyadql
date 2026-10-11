@@ -1,6 +1,6 @@
 include:
 
-  - component: $CI_SERVER_FQDN/to-be-continuous/python/gitlab-ci-python@9.6.1
+  - component: $CI_SERVER_FQDN/to-be-continuous/python/gitlab-ci-python@9.6.2
     inputs:
       dep-groups: "dev"
       pytest-enabled: true
